@@ -1,0 +1,909 @@
+Great, thanks for pasting the full text. This **changes the conversation materially**, because the Tool Argument Augmenter is *not* a small observability tweak — it is the **missing control primitive** that makes the GOAP-vs-agentic debate largely obsolete.
+
+I’ll start over cleanly, grounded **only** in this context, and answer your real question:
+
+> **How do we tell enterprises they are just as “safe” without GOAP, using agent-harness / CLI-style agents — and what is the counter-narrative of control?**
+
+---
+
+# Control Reframed: From “Procedural Control” to “Rationale Capture”
+
+The Tool Argument Augmenter in **Spring AI** fundamentally reframes what *control* means in LLM-driven systems.
+
+It makes this statement true:
+
+> **Every tool call can carry an explicit, structured, machine-verifiable rationale supplied by the model itself, captured at execution time, and persisted outside the model.**
+
+That single capability replaces most of what enterprises *think* GOAP gives them.
+
+---
+
+## Why enterprises say they want GOAP (but actually don’t)
+
+When enterprises react positively to GOAP-style frameworks, they are responding to **fear**, not to planning theory.
+
+Specifically, fear that:
+
+* “The LLM will do arbitrary things”
+* “We won’t know why it took an action”
+* “We can’t explain or audit decisions”
+* “We’ll lose control of execution”
+
+GOAP *sounds* like the antidote because:
+
+* actions are enumerable
+* sequences are explicit
+* control flow is human-authored
+
+But **none of those things actually address the real risk surface** in LLM agents.
+
+The real risk surface is:
+
+> **side effects** — tool calls, file writes, network access, state mutation.
+
+And GOAP does *nothing* to explain *why* those happened.
+
+---
+
+## What Tool Argument Augmentation actually gives you (precisely)
+
+With the Tool Argument Augmenter, *every* tool call can be augmented with:
+
+* **Why this tool was chosen**
+* **What the model expected to happen**
+* **What evidence triggered the call**
+* **Confidence in the choice**
+* **Memory notes for future context**
+* **Agent / run / coordination metadata**
+
+Crucially:
+
+* This information is **not inferred**
+* It is **not reconstructed**
+* It is **explicitly produced by the model**
+* It is **captured before the side effect happens**
+
+That is real control.
+
+---
+
+## Why this is stronger than GOAP-style “control”
+
+Let’s compare concretely.
+
+### GOAP control
+
+* You know *which abstract action* was selected
+* You assume the action’s semantics are correct
+* The meaningful work happens *inside* the action
+* The model’s reasoning is opaque
+* Audit stops at “Action X was chosen”
+
+### Tool-argument-augmented control
+
+* You know **why** the model decided to act
+* You know **what it thought would happen**
+* You know **what evidence triggered the action**
+* You can log, diff, replay, and analyze decisions
+* You can policy-check the *rationale itself*
+
+In other words:
+
+> **GOAP controls what is allowed.
+> Tool-argument augmentation controls what is justified.**
+
+Enterprises care far more about the latter.
+
+---
+
+## Applying this to the “agentic CLI tools” question
+
+You asked a critical question earlier:
+
+> *“I don’t see chaotic behavior in Claude Code, Codex, Gemini CLI. They already have control.”*
+
+You’re right — and the reason is now explicit.
+
+Those tools already rely on:
+
+* bounded execution (workspace, tools)
+* turn limits
+* budgets
+* human interruptibility
+* full diffs and logs
+
+What they historically lacked was:
+
+> **structured capture of *why* a tool was invoked**
+
+The Tool Argument Augmenter fills *exactly* that gap.
+
+---
+
+## Example: AI agent that increases code coverage
+
+This is the canonical enterprise test case.
+
+### What enterprises fear
+
+* Random edits
+* Overfitting tests
+* Unjustified changes
+* “Why did it touch this file?”
+
+### With tool-argument augmentation, you can show:
+
+For **every tool call** (e.g., `writeFile`, `runTests`, `addTest`):
+
+* **Trigger**
+
+  > `CoverageEvaluator(score=0.82 < threshold=0.90)`
+
+* **Rationale**
+
+  > “Uncovered null-input branch in Foo.bar() requires test”
+
+* **Expected outcome**
+
+  > “Coverage for Foo increases above 90%”
+
+* **Confidence**
+
+  > `high`
+
+* **Scope**
+
+  > “Test file only, no production code modified”
+
+* **Run context**
+
+  > `run_id=42, attempt=7/100`
+
+This is **auditable, replayable, and defensible**.
+
+No GOAP plan can give you that.
+
+---
+
+## The counter-narrative to “procedural control”
+
+Here is the message you should give enterprises, verbatim or close to it:
+
+> **We don’t control agents by constraining their thought process.
+> We control them by bounding execution and recording the rationale for every side effect.**
+
+And then:
+
+> **If an agent ever does something unsafe, we can point to the exact rationale it provided — or prove that no such rationale exists.**
+
+That is stronger than:
+
+* preconditions
+* symbolic plans
+* action graphs
+
+Because it operates at the **side-effect boundary**, where risk actually exists.
+
+---
+
+## Why this obsoletes GOAP for LLM agents
+
+GOAP assumes:
+
+* effects are known
+* reasoning is implicit
+* control is achieved by restriction
+
+Tool-argument augmentation assumes:
+
+* effects are uncertain
+* reasoning must be explicit
+* control is achieved by **justification + evidence**
+
+In LLM systems, the second model matches reality.
+
+This is why you found:
+
+* no AI/LLM papers using GOAP
+* only toy examples
+* heavy reliance on workflow metaphors
+
+They are solving yesterday’s problem.
+
+---
+
+## The key enterprise-safe claim you can now make
+
+This is the sentence you were missing:
+
+> **“Our agents are safe because every tool call is justified, logged, policy-checkable, and replayable — not because the agent followed a predefined plan.”**
+
+That is a **modern, defensible control story**.
+
+It aligns with:
+
+* Spring AI’s Tool Argument Augmenter
+* agent-harness
+* CLI agents
+* Tuvium supervisor loops
+* W&B-style experimental assurance
+
+---
+
+## Final synthesis
+
+* GOAP offers *symbolic comfort*
+* Tool Argument Augmentation offers *operational assurance*
+* Enterprises ultimately trust **logs + evidence**, not planners
+* The “fear” narrative collapses once you show them:
+
+  * bounded execution
+  * explicit rationales
+  * empirical validation across runs
+
+You’re not arguing against control.
+
+You’re offering **a better, more honest form of it**.
+
+
+Perfect. Below are **all three artifacts**, written to be **drop-in usable**, technically precise, and aligned with Spring AI’s Tool Argument Augmenter. They are deliberately framed to **replace GOAP-style “procedural control” with evidence-based control**.
+
+You can copy/paste these directly into docs, decks, or customer-facing material.
+
+---
+
+# 1. Tuvium Documentation Section
+
+### **Control & Auditability Without Planning**
+
+#### Why Tuvium Does Not Use GOAP for Control
+
+Traditional AI planning frameworks (e.g., GOAP, STRIPS) attempt to control agent behavior by enumerating allowed actions and constraining the sequence in which those actions may occur. This approach assumes that action effects are predictable and that correctness can be guaranteed *a priori* through planning.
+
+Modern LLM-based agents violate these assumptions:
+
+* outcomes are probabilistic
+* reasoning is opaque unless explicitly captured
+* success is evaluated empirically (via tests, judges, metrics)
+
+Tuvium therefore adopts a different control model.
+
+#### Control via Bounded Execution and Explicit Rationale
+
+Tuvium controls agent behavior at the **side-effect boundary**, where risk actually exists. Instead of constraining how an agent reasons, Tuvium enforces:
+
+* **Hard execution boundaries**
+
+  * workspace-scoped file access
+  * tool allowlists
+  * no implicit network or credential access
+  * strict turn, token, and time budgets
+
+* **Empirical validation**
+
+  * judge-scored outcomes
+  * repeated runs
+  * convergence and stuck detection
+
+* **Rationale capture for every tool call**
+
+  * *why* the tool was chosen
+  * *what evidence* triggered it
+  * *what outcome* the model expected
+  * *confidence* in the choice
+  * *run / step metadata*
+
+This is enabled through Spring AI’s **Tool Argument Augmenter**, which dynamically extends tool schemas so the LLM supplies structured reasoning alongside every tool invocation.
+
+#### What This Enables
+
+For every side effect (file write, test run, refactor, API call), Tuvium can provide:
+
+* a machine-readable rationale
+* a human-readable explanation
+* a trace back to the triggering judge or evaluator
+* full replayability
+
+This provides **stronger, auditable control** than symbolic planning, without assuming a closed or deterministic world.
+
+---
+
+# 2. Customer-Facing FAQ
+
+### **“Is This Safe?”**
+
+#### Q: How do you prevent the AI from doing arbitrary or unsafe things?
+
+**A:** We prevent unsafe behavior by bounding what the agent can do and recording *why* it did it.
+
+Agents in Tuvium:
+
+* can only operate within explicitly allowed scopes (e.g., a repo)
+* can only use approved tools
+* are limited by time, turns, and budget
+* can be stopped at any time
+
+Most importantly, **every tool call includes a structured rationale provided by the model itself**, captured before execution.
+
+---
+
+#### Q: How is this safer than workflow or planning-based systems?
+
+**A:** Planning systems control behavior *in theory* by restricting allowed actions. Tuvium controls behavior *in practice* by validating outcomes and capturing intent.
+
+For every action, we can show:
+
+* what triggered it
+* what the model expected to happen
+* what actually happened
+* whether it met our quality thresholds
+
+This is the same assurance model used in CI systems, distributed systems testing, and ML experiment tracking.
+
+---
+
+#### Q: What if the agent makes a mistake?
+
+**A:** Mistakes are expected—and handled.
+
+We:
+
+* run agents repeatedly
+* detect regressions via judges
+* stop or rollback on failure
+* analyze the captured rationale to understand *why* the decision was made
+
+This is safer than assuming correctness from a predefined plan.
+
+---
+
+#### Q: Can you audit or reproduce decisions?
+
+**A:** Yes.
+
+Every run is logged with:
+
+* configuration
+* tool calls
+* rationales
+* diffs and artifacts
+* judge scores
+
+Any run can be replayed exactly.
+
+---
+
+#### Q: Is this compliant with enterprise governance needs?
+
+**A:** Yes. The system is designed around:
+
+* explicit boundaries
+* deterministic replay
+* full observability
+* human and machine-readable audit trails
+
+This meets real enterprise audit requirements better than symbolic planning.
+
+---
+
+# 3. One-Page Explainer
+
+### **GOAP Control vs. Rationale-Driven Control**
+
+#### Two Models of “Control”
+
+| Aspect                | GOAP / Planning            | Tuvium                             |
+| --------------------- | -------------------------- | ---------------------------------- |
+| Control mechanism     | Predefined actions & plans | Bounded execution + evidence       |
+| Assumes known effects | Yes                        | No                                 |
+| Handles uncertainty   | Poorly                     | Explicitly                         |
+| Side-effect audit     | Indirect                   | First-class                        |
+| Explanation           | “Action X was chosen”      | “Here is why this action occurred” |
+| Safety guarantee      | Theoretical                | Empirical                          |
+| Works in open domains | No                         | Yes                                |
+
+---
+
+#### Why GOAP Sounds Safe (But Isn’t Enough)
+
+GOAP feels safe because:
+
+* actions are enumerable
+* plans are explicit
+* behavior looks deterministic
+
+But in LLM systems:
+
+* the meaningful behavior happens *inside* actions
+* effects are not guaranteed
+* reasoning is otherwise invisible
+
+GOAP cannot explain *why* a tool was invoked.
+
+---
+
+#### Why Rationale Capture Is Real Control
+
+With Tool Argument Augmentation, every tool call carries:
+
+* intent
+* evidence
+* expectations
+* confidence
+
+This allows:
+
+* policy enforcement on reasoning
+* automated analysis of decisions
+* debugging of agent behavior
+* empirical safety validation across many runs
+
+Control becomes **observable and testable**, not assumed.
+
+---
+
+#### The Bottom Line
+
+> **Planning restricts what an agent is allowed to do.
+> Rationale capture proves what an agent actually did—and why.**
+
+For modern AI systems operating under uncertainty, the second is the stronger guarantee.
+
+---
+
+## Final Takeaway (for you)
+
+You now have a **complete counter-narrative** to GOAP-based “enterprise control”:
+
+* Control is not about constraining thought
+* Control is about bounding execution
+* Control is about evidence, not plans
+* Tool Argument Augmentation is the missing primitive
+
+This aligns perfectly with:
+
+* agent-harness
+* CLI agents
+* Tuvium supervisor loops
+* W&B-style assurance models
+
+now
+
+* condense this into a **2-slide exec deck**
+* rewrite it in **Rod-neutral language**
+
+
+answer:
+
+
+
+Slide 1 — The Real Enterprise Question: “How Is This Controlled?”
+What Enterprises Actually Worry About
+
+When enterprises ask for control over AI agents, they are not asking for planning theory.
+They are asking:
+
+Will the system stay within approved boundaries?
+
+Can we explain why it took an action?
+
+Can we audit, reproduce, and roll back outcomes?
+
+Can we prove—empirically—that it behaves safely over time?
+
+Why “Procedural Control” Sounds Appealing
+
+Classical approaches (e.g., workflows, planners, action graphs) emphasize:
+
+predefined actions
+
+explicit sequences
+
+deterministic execution
+
+These approaches are valuable in closed, enumerable domains, and they provide architectural clarity.
+
+However, modern LLM-based agents operate in open-ended, probabilistic environments, where:
+
+outcomes are not known in advance
+
+success is evaluated after execution
+
+reasoning must be surfaced, not assumed
+
+Key Shift
+
+In modern AI systems, control is not about prescribing every step.
+It is about bounding execution and proving behavior through evidence.
+
+Slide 2 — Control Through Evidence, Not Assumptions
+Tuvium’s Control Model
+
+Tuvium provides enterprise-grade control through three concrete mechanisms:
+
+1. Bounded Execution
+
+strict workspace and tool scopes
+
+no implicit network or credential access
+
+time, token, and retry budgets
+
+human interruptibility
+
+This ensures agents cannot act outside approved limits.
+
+2. Explicit Rationale Capture (Per Action)
+
+Using tool argument augmentation, every tool invocation records:
+
+why the tool was chosen
+
+what evidence triggered the decision
+
+what outcome the model expected
+
+confidence and contextual metadata
+
+This rationale is captured before execution and persisted for audit.
+
+3. Empirical Assurance
+
+repeated runs
+
+judge-based evaluation
+
+convergence and regression detection
+
+full replayability
+
+Safety is demonstrated through observed behavior, not assumed from design.
+
+What This Means for Enterprises
+
+Every side effect is justified, logged, and reviewable
+
+Decisions are explainable in human and machine terms
+
+Behavior can be validated statistically, not just theoretically
+
+The system is auditable, reproducible, and governable
+
+Bottom Line
+
+Traditional control constrains what an agent is allowed to do.
+Modern control proves what an agent actually did—and why.
+
+Tuvium is designed for the second.
+
+
+Slide 1 — Two Models of “Control” in AI Systems
+Planning-Based Control vs Evidence-Based Control
+Dimension	Planning / GOAP Model	Tuvium Evidence-Based Model
+Core idea	Control by prescribing allowed steps	Control by bounding execution and proving behavior
+Assumption	Action effects are known in advance	Action outcomes must be observed
+Agent freedom	Limited by predefined action graphs	Limited by scopes, budgets, and policies
+Explanation	“The plan chose this action”	“Here is why this action was taken”
+Auditability	Structural (design-time)	Operational (run-time)
+Failure handling	Replan within model	Detect, stop, rollback, learn
+Fit for open domains	Weak	Strong
+Fit for LLM agents	Conceptually aligned	Operationally aligned
+Executive takeaway
+
+Planning-based control optimizes predictability.
+Evidence-based control optimizes assurance.
+
+Both have value—but they solve different problems.
+
+Slide 2 — Control & Assurance for CISO / Risk / Compliance
+What Risk Teams Actually Need
+
+From a security, risk, and compliance perspective, the critical questions are:
+
+Can the AI act outside approved boundaries?
+
+Can we explain why a sensitive action occurred?
+
+Can we audit and reproduce decisions?
+
+Can we demonstrate safe behavior over time?
+
+Can we stop or roll back harmful outcomes?
+
+How Tuvium Addresses These Requirements
+1. Hard Safety Boundaries
+
+File system and resource scoping
+
+Tool allowlists
+
+No implicit network or credential access
+
+Time, token, and retry limits
+
+Immediate human interruption
+
+➡ Prevents unauthorized or runaway behavior by construction
+
+2. Action-Level Rationale Logging
+
+For every tool invocation, the system records:
+
+the reason for the action
+
+the triggering evidence (tests, evaluators, thresholds)
+
+the expected outcome
+
+confidence and context
+
+run and step identifiers
+
+➡ Provides explainability at the point of risk, not just at design time
+
+3. Empirical Assurance
+
+repeated, bounded runs
+
+automated evaluation via judges
+
+regression and anomaly detection
+
+deterministic replay
+
+➡ Safety is demonstrated through observed evidence, not assumptions
+
+Why This Matters for Compliance
+
+Compliance is not about proving that a system could not misbehave.
+It is about proving that it did not, and showing why.
+
+Tuvium’s control model aligns with how enterprises already validate:
+
+CI/CD pipelines
+
+automated testing
+
+ML systems
+
+security tooling
+
+CISO-Level Bottom Line
+
+Tuvium treats AI agents like any other high-risk automated system:
+constrained execution, full observability, and evidence-backed assurance.
+
+This delivers governance without requiring rigid, closed-world planning models.
+
+Below are all three artifacts, written so you can drop them directly into decks or internal docs.
+They are enterprise-neutral, Rod-neutral, and aligned with how CISOs, Risk, and Compliance teams actually think.
+
+1. Regulated-Industry Version
+(Finance, Healthcare, Government)
+AI Control & Assurance in Regulated Environments
+Regulatory Reality
+
+Regulated industries do not require AI systems to be deterministic.
+They require them to be:
+
+Bounded (cannot exceed approved authority)
+
+Explainable (decisions can be justified)
+
+Auditable (actions can be reconstructed)
+
+Reproducible (results can be verified)
+
+Interruptible (human override is always possible)
+
+Why Planning Alone Is Insufficient
+
+Planning-based approaches (e.g., action graphs, workflows, GOAP) assume:
+
+a closed world
+
+known action effects
+
+correctness derived from design
+
+Modern AI agents operate in open, probabilistic domains, where:
+
+outcomes are validated after execution
+
+correctness is established empirically
+
+reasoning must be captured explicitly
+
+Tuvium’s Assurance Model
+
+Tuvium addresses regulatory requirements through operational controls, not symbolic plans:
+
+1. Enforced Execution Boundaries
+
+workspace-scoped file access
+
+explicit tool allowlists
+
+no implicit credentials or network access
+
+strict time, token, and retry budgets
+
+2. Action-Level Rationale Capture
+
+Every tool invocation records:
+
+why the action was taken
+
+what evidence triggered it
+
+what outcome was expected
+
+confidence and contextual metadata
+
+This data is captured before execution and persisted for audit.
+
+3. Empirical Validation
+
+repeated, bounded runs
+
+evaluator / judge scoring
+
+regression detection
+
+deterministic replay
+
+Regulatory Conclusion
+
+In regulated environments, assurance is achieved through bounded execution, explicit justification, and observable evidence—not through assumptions about perfect plans.
+
+2. One-Page Risk Brief (Internal Approval Friendly)
+AI Agent Risk Assessment Summary
+System Description
+
+Tuvium supervises AI agents using bounded execution, continuous evaluation, and full observability. Agents operate only within explicitly approved scopes and tools.
+
+Key Risk Categories & Mitigations
+1. Unauthorized Actions
+
+Risk: Agent accesses data or systems beyond approval
+Mitigation:
+
+file system scoping
+
+tool allowlists
+
+no implicit network or credential access
+
+2. Unexplained Decisions
+
+Risk: Inability to justify sensitive actions
+Mitigation:
+
+structured rationale captured for every tool call
+
+linkage to triggering evidence (tests, evaluators, thresholds)
+
+3. Runaway or Unbounded Behavior
+
+Risk: Infinite loops, excessive resource use
+Mitigation:
+
+strict time, token, retry, and budget limits
+
+immediate human interruption
+
+4. Irreproducible Outcomes
+
+Risk: Cannot reconstruct or audit behavior
+Mitigation:
+
+run ledger with full configuration, artifacts, and rationale
+
+deterministic replay
+
+5. Silent Regressions
+
+Risk: Gradual degradation of quality or safety
+Mitigation:
+
+judge-based scoring
+
+regression and convergence detection across runs
+
+Risk Posture
+
+Risk is reduced not by restricting agent reasoning, but by constraining execution and validating outcomes with evidence.
+
+3. Controls Mapping (SOC 2 / ISO 27001 / Internal Controls)
+Control Alignment Overview
+
+This section maps Tuvium’s architecture to common enterprise control frameworks.
+
+Access Control (SOC 2 CC6, ISO 27001 A.9)
+
+Requirement: Systems must prevent unauthorized access or actions.
+
+Tuvium Controls:
+
+Explicit tool allowlists
+
+Workspace-scoped file access
+
+No implicit network or credential usage
+
+✔ Control enforced at runtime
+
+Change Management (SOC 2 CC8, ISO 27001 A.12)
+
+Requirement: Changes must be tracked, reviewed, and reversible.
+
+Tuvium Controls:
+
+All changes captured as diffs/artifacts
+
+Every change linked to a run ID and rationale
+
+Replayable execution
+
+✔ Full traceability and rollback capability
+
+Monitoring & Logging (SOC 2 CC7, ISO 27001 A.12.4)
+
+Requirement: Activity must be logged and monitored.
+
+Tuvium Controls:
+
+Per-tool-call rationale logging
+
+Evidence-linked decisions
+
+Central run ledger
+
+✔ Action-level observability, not just system logs
+
+Incident Response (SOC 2 CC7, ISO 27001 A.16)
+
+Requirement: Organizations must detect and respond to incidents.
+
+Tuvium Controls:
+
+Judge-based anomaly detection
+
+Stuck and regression detection
+
+Immediate interruption and rollback
+
+✔ Automated detection + human override
+
+Explainability & Accountability (Emerging AI Governance)
+
+Requirement: Decisions must be explainable and attributable.
+
+Tuvium Controls:
+
+Structured rationale captured from the model itself
+
+Human-readable and machine-verifiable explanations
+
+Evidence preserved alongside execution
+
+✔ Explanation at the point of action, not reconstructed later
+
+Governance Summary
+
+Tuvium aligns with enterprise control frameworks by treating AI agents like any other high-risk automated system: bounded authority, explicit justification, continuous monitoring, and empirical assurance.
+
+Executive Closing Line (Reusable)
+
+Planning constrains what an agent is allowed to do.
+Assurance proves what an agent actually did—and why.
+
+That’s the difference enterprises ultimately care about.
+
+If you want next, I can:
+
+tailor this for a board-level risk review
+
+adapt language to a specific regulator (e.g., banking or healthcare)
+
+or turn this into a customer-facing whitepaper

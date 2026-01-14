@@ -38,6 +38,7 @@
     <modules>
         <module>harness-api</module>
         <module>harness-patterns</module>
+        <module>harness-tools</module>
         <module>harness-examples</module>
     </modules>
 
@@ -70,6 +71,11 @@
             <dependency>
                 <groupId>org.springaicommunity.agents</groupId>
                 <artifactId>harness-patterns</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.springaicommunity.agents</groupId>
+                <artifactId>harness-tools</artifactId>
                 <version>${project.version}</version>
             </dependency>
 

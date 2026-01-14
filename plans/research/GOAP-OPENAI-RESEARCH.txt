@@ -1,0 +1,439 @@
+GOAP Integration Architecture Design
+1. Narrative Overview
+
+Goal-Oriented Action Planning (GOAP) is a planning system that enables an AI agent to dynamically devise a sequence of actions to achieve its goals, rather than following hard-coded scripts or state machines. The design goal for integrating GOAP into our Java agent harness is to provide a flexible and extensible planning module that works within the existing Judge-centric framework. This will allow agents to choose actions based on current world state and goals, leading to more adaptive behavior (as seen in games like F.E.A.R. where AI bots used A*-based planning). By leveraging classical STRIPS-style planning (preconditions/effects) and heuristic search (A*), our GOAP system can automatically find action sequences (plans) that transform the world state from a current situation to one satisfying a desired goal. The harness constraints (no external GPL code, use of Judge/AgentLoop abstractions) mean we must design GOAP from the ground up to fit seamlessly into the existing architecture and avoid any IP contamination.
+
+Design Rationale & Constraints: We aim for a basic but extensible implementation. Initially, the system will handle single-agent planning with boolean or enumerated world state facts (similar to STRIPS propositions). The core components (Actions, Goals, Planner, etc.) are kept modular so they can be extended or swapped out. For example, while we start with a simple A* planner, the design should allow plugging in more advanced or domain-specific planners later (e.g. Weighted-A*, Anytime Repairing A*, Lifelong Planning A* for dynamic replanning). We also anticipate future multi-agent scenarios, so the architecture will not assume a single agent’s world state or goals globally – it will allow multiple agents each with their own GOAP module, and potential coordination mechanisms. Performance is a key consideration: GOAP planning can be computationally expensive (combinatorial with number of actions), so the design will include options for heuristics and plan caching or partial planning if needed. Encouragingly, recent evaluations show GOAP can scale linearly with the number of agents when designed carefully, so our focus is on efficient algorithms and the ability to constrain planning (e.g. a max search depth or node expansion limit) for real-time use. In summary, the GOAP integration will bring STRIPS-like AI planning capabilities into the harness in a way that leverages the harness’s Judge framework for condition checks, and is configurable, testable, and ready to extend (or even generalize beyond GOAP, aligning with the idea that GOAP is a “special case” of our more general agent framework).
+
+2. Architecture Diagram & Description
+
+Architecture Diagram: Key components of the GOAP system integrated in the agent framework. The agent (or AgentLoop) queries the current world state and uses the GOAP Planner (A) with a set of defined Actions and a chosen Goal to produce a Plan (an ordered action sequence). A Plan Executor then steps through the plan’s actions, invoking each action’s effects on the world and verifying results via the Judge framework. If an action’s precondition fails or its effects do not materialize, the executor can trigger a replan. The GOAP module hooks into the agent’s lifecycle via the Judge interface: preconditions and effects are checked with Judge conditions, and goal completion is treated as an isComplete check.*
+
+The GOAP architecture consists of the following major components, each mapping to a specific role in the planning system:
+
+Planner (A* Planning Engine)
+
+The Planner is responsible for searching through the space of possible actions to find a valid sequence that achieves a given goal from the current world state. We implement this using an A* algorithm tailored to GOAP. The planner takes as input the initial world state, a goal (desired state conditions), and the set of available actions. It produces a Plan (ordered list of actions) if one is found, or indicates failure if no valid plan exists. The search uses action costs and a heuristic to guide it. In classical GOAP (and STRIPS planning), the heuristic is often a simple estimate like “number of unsatisfied goal conditions” or another domain-specific measure of distance from goal state. Our design will allow the heuristic to be provided or customized, but a default can be a relaxed-plan length or other admissible estimate.
+
+Internally, the A* planner treats each possible world state as a node in the search graph, and actions as transitions (operators) that move from one state to a new state. Starting from the initial state, the planner explores actions that eventually satisfy the goal conditions. Each action has a cost (e.g. time or resource cost), and the planner accumulates total cost g(n) and uses a heuristic h(n) to prioritize nodes (standard A* where f(n) = g + h). For efficiency, the world state can be represented in a structured way (e.g. a bitset of booleans or a map of key→value facts) so that we can quickly apply effects and check goal satisfaction. The planner must also respect action preconditions – it can only consider an action if its preconditions are met in the current node’s state. In effect, the planner is doing a forward-chaining search from the initial state toward the goal (this is a design choice; GOAP can also be implemented with backward/regressive search, but we use forward A* for simplicity). Each time the planner expands a node (state), it will: check if the goal is satisfied in that state (if yes, reconstruct the plan solution), otherwise generate successor states by applying each action whose preconditions are valid. The result is a sequence of states leading from the initial to a goal-satisfying state, and the corresponding sequence of actions forms the plan.
+
+Planner Component Summary: The Planner is encapsulated in an interface (e.g. IPlanner) with a method to compute a plan. This allows different planning algorithms to be used interchangeably. Our default implementation will be AStarPlanner, which implements IPlanner using the algorithm above. The planner does not execute any real actions itself – it works with abstract state representations. It will heavily use the definitions of actions (preconditions/effects) and the goal’s conditions to navigate the search space. In terms of integration, the Planner might be used within the agent’s logic whenever a new plan is needed (for example, when the agent picks a new top-level goal, or when an existing plan fails and we need to replan).
+
+GOAP Actions (Preconditions, Effects, Cost)
+
+GOAP Actions define the atomic steps the agent can take. Each action is modeled with:
+
+A name/identifier (for debugging and logging).
+
+A set of preconditions: conditions that must be true in the world state for the action to be valid.
+
+A set of effects: changes this action applies to the world state when executed (e.g. setting certain facts to true/false, or modifying values).
+
+A cost: a numerical cost value used by the planner to evaluate the desirability of using this action (e.g. time cost or a heuristic weight; lower cost typically means the planner will prefer that action if it helps reach the goal).
+
+In our design, we represent an action via an interface IGoapAction (see Interfaces section) with methods to check preconditions and apply effects. For planning purposes, an action can be thought of as an operator that transforms one state into another. During planning, checking preconditions usually involves comparing the required facts against the current state. For example, an action “PickupWeapon” might have precondition {hasWeapon: false, weaponAvailable: true} and effect {hasWeapon: true}. The planner would only consider “PickupWeapon” in a state where the agent does not have a weapon and one is available; applying it would produce a new state where hasWeapon is true.
+
+For integration with the Judge framework, each action’s precondition check can be implemented using a Judge – effectively a function that returns a PASS or FAIL based on the state. In fact, we can map GOAP preconditions directly to the harness’s canExecute() Judge concept: the action will have a Judge that inspects the current JudgmentContext (which contains the world state) and returns PASS if and only if all preconditions are satisfied. Similarly, the action’s effects can be verified using a Judge analogous to didSucceed(): after performing the action, we check if the expected effect conditions now hold true in the world state. This Judge integration provides a powerful extension point (since Judges allow not just boolean pass/fail but also fuzzy verdicts, scoring, etc., though initially we treat them as simple booleans).
+
+Action Execution vs Planning Model: It’s important to distinguish the planning model of an action from the execution of the action. In the planning phase, applying an action’s effects is typically done symbolically – e.g., create a new copy of the world state with certain facts modified. In the execution phase (when the agent is actually carrying out the plan), the action needs to invoke whatever game or environment logic actually performs the action (moving the character, firing a weapon, etc.). Our design will allow the same IGoapAction interface to be used for both purposes: the applyEffects method can update the agent’s internal world state representation, and a separate method or the same method can also trigger the real action. Depending on the harness structure, we might integrate the actual execution via the Judge framework’s Generator. For instance, the agent’s generator() function could call action.execute() which performs the action in the environment (or simulation) and returns the updated state. To keep the design simple, we can assume actions execute “instantly” in the sense that one planning cycle corresponds to a complete action effect; if actions take time or have animations, the plan executor would need to wait until completion before continuing (this could be handled via the agent loop ticking, or asynchronous callbacks, but those details are beyond the basic design).
+
+Defining new actions under this system is straightforward: one can create new classes implementing IGoapAction and fill in the logic for precondition check and effect application. We can also support defining actions via data (for example, listing preconditions/effects in a configuration file) by providing a generic Action implementation that takes sets of key/value conditions. For now, the expectation is that actions will be coded (ensuring full flexibility of what they can do), but the system does not preclude a data-driven approach if desired.
+
+World State Representation
+
+The World State is a collection of facts that describe the current situation the agent is in. This could include facts about the agent (e.g. health: 50, hasWeapon: true), the environment (enemyVisible: false, ammoCount: 10), and any other boolean or numeric variables relevant to decision-making. In classical GOAP (and STRIPS), world state is often simplified to a set of boolean propositions – we will follow this approach initially (using booleans or simple enumerable states), but our design allows storing arbitrary values in the state (e.g. integers, positions) if needed for more complex planning.
+
+We will model world state in a domain-generic way. For example, we might implement a WorldState class as a map or dictionary of keys to values (or a specialized bitset for booleans for efficiency). The planner and actions rely on reading and writing this state. To keep things type-safe, our interfaces can be generically typed (e.g. IGoapAction<S> where S is the type representing state). In a simple implementation, S could just be Map<String,Object> for flexibility. For clarity in this design, we’ll talk about the world state conceptually, and one can assume an appropriate implementation (even a custom class) can be used as S. The harness will provide the current world state to the GOAP system via an IWorldStateProvider interface. This decouples the planning logic from however the agent actually tracks state. For instance, the agent might be receiving sensor updates from the environment or game engine – those updates would populate some global state object or the Judge’s context. The IWorldStateProvider simply abstracts “get me the latest world state”. In a single-agent scenario, this may just fetch the agent’s own state. In a multi-agent scenario, the world state might include global facts or each agent might have its own state provider.
+
+In integration, we may store the world state inside the Judge’s JudgmentContext. In fact, our harness’s context could carry a key like "worldState" mapping to the state object, which our GOAP planner and actions will use. This way, whenever an action’s Judge or the goal’s Judge runs, they operate on the same state representation. Maintaining the world state consistency is crucial: the Plan Executor (see below) will update the world state as actions are executed, so that subsequent actions and goal checks see the changes. We will ensure that either the execute() method of an action returns the new state, or the world state object is mutable and is updated in place. For simplicity, one approach is immutable state objects (each action produces a new state object – this is more akin to functional planning and avoids side-effects during planning), whereas during execution we might allow in-place mutation of a shared state representation. The design can support either, but using immutable copies during planning is safer to avoid accidental corruption of the search state.
+
+Goals
+
+A Goal in GOAP is a representation of the agent’s desired end state. In practice, a goal could be something like “eliminate target” or “find health pack” – each defined by certain conditions that should be true (or false) when the goal is satisfied. We model goals similarly to actions’ preconditions: as a set of conditions on the world state. For example, a goal might specify {targetEliminated: true, agentAlive: true} as the success criteria. The planner’s job is to find actions that can make these conditions true.
+
+In our design, IGoapGoal is a simple interface with a method like isSatisfied(State) that returns true if the given state meets the goal’s conditions. It may internally store a set of desired facts (like a target state). We can also give each goal a priority or utility value – if the agent has multiple potential goals, a higher-level system might choose which goal to pursue first. (The GOAP literature often suggests using a goal selector or utility system to pick the active goal, especially if multiple goals are achievable. We do not implement a full utility system here, but we design for it: for example, IGoapGoal could have a getPriority(WorldState) method, as hinted by some implementations. Initially, we might assume one active goal at a time and set priorities manually.)
+
+In the harness integration, a Goal can be represented as a specialized Judge that checks completion. In fact, we can map the goal to the isComplete() check in the AgentLoop. For instance, if the agent’s goal is defined as a set of world-state conditions, we can create a Judge for isComplete that validates those conditions against the current state. Our Goal interface can extend the Judge interface to directly plug into the loop. For example, Goal.judge(context) could simply call isSatisfied on the world state inside that context. This means the agent loop can query “are we done yet?” using the same goal object.
+
+Defining a new goal is as simple as specifying the desired conditions (and possibly a priority). We might implement a few concrete goal classes or a generic one that takes a condition map. The key is that goals are evaluated dynamically: even if the agent is in the middle of a plan, if the world state changes such that the goal is achieved (or becomes impossible), the system should notice and respond. For example, if the goal was “have 100 health” and mid-plan the agent’s health reaches 100, the goal isSatisfied becomes true and the agent can stop further actions.
+
+Plan Executor
+
+The Plan Executor is the runtime component that takes a plan (the action sequence from the planner) and makes the agent execute it step by step in the real (simulated) world. This component is crucial for bridging the gap between a theoretical plan and actual gameplay: it must handle action execution, monitor success/failure, and decide when to replan. We design the Plan Executor as an interface IPlanExecutor to allow different execution strategies. The basic implementation (PlanExecutorSequential for example) will execute actions one after another in order.
+
+Execution Loop: The executor will maintain a reference to the current world state (via the provider or by updating a local state variable). It takes the first action in the plan and checks that action’s preconditions at execution time (since the world may have changed slightly since planning, especially in a dynamic environment). If the preconditions are still satisfied, it calls the action’s execute/applyEffects method to perform the action. After execution, it uses the action’s effect verification to ensure the intended changes occurred (sometimes actions can fail or only partially succeed; e.g., an “attack” action might not kill the enemy if damage was insufficient). If the effects are verified, the executor moves on to the next action in the plan. If either the precondition check fails or the effect verification fails, the executor aborts the current plan – because the plan is no longer valid in the current context. At that point, it can trigger a replanning: request the Planner to compute a new plan from the now-current state toward the same goal (assuming the goal is still relevant). This mechanism allows the agent to dynamically adapt if something unexpected happens during execution (for example, someone moved an item needed for the plan, so the preconditions for the next step aren’t met, or an action didn’t have the expected outcome). Our executor can be configured with a maximum number of replanning attempts to avoid infinite loops in pathologically changing environments.
+
+This execute/check loop runs until either the plan is finished (all actions executed successfully) or a failure triggers replanning. Additionally, after each action, the executor can check if the goal is already achieved (perhaps ahead of schedule). If so, it can stop early without executing unnecessary actions. For example, if the goal was to reach a safe location and after 3 out of 5 planned moves the agent is already at the goal, the remaining two moves can be skipped. This is a minor optimization but easy to do by calling goal.isSatisfied(currentState) after each step.
+
+Integration with Agent Lifecycle: The Plan Executor can be implemented as part of the agent’s update loop. If the harness calls an agent’s update() or similar each tick, the executor might perform one action per tick (or per call) to allow the game to progress between actions. Alternatively, if actions are instantaneous or we don’t need to wait, the executor could loop through the whole plan in one go. A common pattern is to have the agent carry a reference to the current plan and current action index, and each tick it does a bit of the plan. In our harness, we can integrate the Plan Executor in the AgentLoop by treating it as the Generator or part of the generator’s logic. Essentially, the GOAP system (planner + executor) together can function as the agent’s decision-making step.
+
+We ensure the Plan Executor uses the Judge framework for its checks: the action precondition check at execution time is effectively if (!action.checkPreconditions(state).pass()) – which corresponds to the harness’s canExecute logic. The effect verification corresponds to didSucceed checks. The goal satisfaction corresponds to isComplete check after each action. By structuring it this way, our execution loop aligns with the harness’s expectations for how an agent’s loop operates (which typically goes: check canExecute -> run generator -> check didSucceed -> possibly refine or loop until isComplete).
+
+Hooks into Agent Lifecycle and Judge Framework
+
+One of the design requirements is to plug the GOAP system into the existing Judge-centric agent framework. The harness likely has an AgentLoop with hooks like canExecute, shouldExecute, generator, didSucceed, and isComplete (this is a typical pattern in the provided framework). We will integrate GOAP at these extension points:
+
+AgentLoop as a GOAP wrapper: We can wrap the entire GOAP planning/execution sequence into the agent’s loop via the generator. For example, we can create an AgentLoop instance where the generator() function invokes our Plan Executor running the planner and actions, and thus produces the agent’s next state or output. In such a loop, we would set canExecute to always pass (meaning the GOAP module can always run when called), and similarly shouldExecute always pass, because the GOAP system itself will decide internally which actions to execute. We set didSucceed to always pass as well – because we don’t want the external loop to prematurely mark the agent as failed; the GOAP’s internal effect verification handles success/failure of each step. Finally, we implement isComplete by checking if the goal is achieved. This can be done by calling our Goal’s judge as described earlier. In code/psuedocode it looks like:
+
+AgentLoop<Goal, WorldState> goapLoop = AgentLoop.builder()
+    .generator((goal, ctx) -> { 
+         // Inside generator: run planning + execution
+         return GoapPlannerExecutor.run(goal, ctx); 
+     })
+    .canExecute(Judges.alwaysPass())
+    .shouldExecute(Judges.alwaysPass())
+    .didSucceed(Judges.alwaysPass())
+    .isComplete(ctx -> {
+         Goal goal = (Goal) ctx.input();
+         return goal.judge(ctx); // checks if goal satisfied
+     })
+    .build();
+
+
+In the above, GoapPlannerExecutor.run(goal, ctx) would encapsulate: fetch current world state, plan a path to goal, execute the plan (with internal replanning if needed), and return the final state (or perhaps any result needed). This aligns with the pattern described in our research plan. Essentially, the entire GOAP system becomes one “step” in the agent’s loop, which itself may be one of several behaviors or strategies combined by a higher-level strategy selector.
+
+Using Judges for conditions: As noted, each GOAP action’s preconditions can tie into the harness’s canExecute checks. However, since we are encapsulating the plan execution inside the generator, we don’t individually expose each action to the agent loop’s canExecute. Instead, we perform those checks internally using the Judge classes (i.e., calling them in code). The harness’s Judge classes (Judgment, JudgmentContext, etc.) can be used to implement our GOAP conditions in a standardized way. For instance, we might write Judgment.fromBoolean(condition) to get a Judgment that is PASS/FAIL based on a boolean, or use Judges.condition("hasWeapon", true) to create a Judge that checks a specific state fact. By doing so, we get to reuse any logging or debugging features of the Judge system to trace why an action failed to execute (e.g., a precondition Judge could provide feedback string indicating which condition was false).
+
+Main Loop Integration: If not using the AgentLoop builder approach above, another integration approach is to directly call the GOAP planner/executor from the agent’s main loop code. For example, an agent’s update() method could do:
+
+If no current plan or current goal changed, call planner.plan(currentState, activeGoal, actions) to get a new plan.
+
+If a plan was found, take the next action and check action.checkPreconditions on the latest world state.
+
+If preconditions pass, call action.execute(...) to perform it and update world state; then check action.verifyEffects.
+
+If any check fails, set current plan to null (trigger replanning on next tick).
+
+If action succeeded, advance to next action for next tick.
+
+If plan is finished or goal satisfied, either pick a new goal or idle until a new goal is set.
+
+This manual loop is essentially what our Plan Executor does. We emphasize that whichever way it’s implemented (manually or via AgentLoop configuration), the behaviors are the same. The harness’s abstractions (Judge, AgentLoop, Strategy) simply provide a more declarative way to represent the above logic.
+
+By hooking into the Judge framework, we ensure consistency and observability. Judges allow the system to not only check conditions but also report on them (since a Judgment can carry a reason or feedback). This can be useful for debugging plans – e.g., if an action fails its precondition, a Judge could output which precondition failed, aiding debugging. The integration is also what demonstrates that GOAP is a “special case” of the harness’s more general architecture: GOAP’s boolean logic maps into our Judge/Generator pattern one-to-one. In effect, we aren’t bolting on an unrelated system, we are expressing GOAP within the existing agent framework. This coherence will make it easier to extend or modify the agent: for example, one could combine GOAP actions with other behaviors (like an LLM-based action generator) under a common Judge/Strategy structure.
+
+3. Interface Definitions (Java-style)
+
+To implement the above components cleanly, we define a set of core interfaces in Java. These interfaces abstract the GOAP concepts and make the system extensible. New actions or planning algorithms can be introduced just by implementing these interfaces, without altering the core agent loop logic.
+
+Below are the key interfaces and classes, with example method signatures (using Java generics to remain type-safe and flexible across different state representations). In the method comments, we note how each interface relates to the harness concepts:
+
+IGoapAction
+/** 
+ * A single GOAP action with preconditions, effects, and cost. 
+ * Represents a state transition in the planning domain.
+ */
+public interface IGoapAction<S> {
+    /** @return A unique name or identifier for debugging/logging. */
+    String getName();
+
+    /**
+     * Checks if this action can be executed on the given state.
+     * Must return true if all preconditions are satisfied in the state.
+     * (Maps to a Judge-based canExecute check in the harness.)
+     */
+    boolean checkPreconditions(S state);
+
+    /**
+     * Applies this action's effects to the given state and returns the new state.
+     * This does not perform real-world side effects; it simulates the state change.
+     * (In execution, this could also trigger actual game logic.)
+     */
+    S applyEffects(S state);
+
+    /**
+     * @return The cost of this action (used by the planner’s heuristic search).
+     * Lower cost actions are preferred ceteris paribus.
+     */
+    double getCost();
+
+    /**
+     * Optionally, execute the action in the real environment.
+     * This could be defined to perform the actual effects (e.g., move character).
+     * For planning, applyEffects is used; for real execution, implement here if needed.
+     */
+    default void performActionInWorld() {
+        // Implementation depends on environment; could be no-op in pure simulation.
+    }
+}
+
+
+Each IGoapAction encapsulates the logic for its preconditions and effects. For example, an action implementation could internally store a set of required state keys and expected values, and checkPreconditions would iterate through those to compare with the state. Similarly, applyEffects might clone the state and change certain values. We’ve provided a default method performActionInWorld() as a hook for actual execution – this might interface with the environment (e.g. call game APIs). In a pure planning simulation, we don’t need it. In our harness, we might not call performActionInWorld() directly, instead the agent’s domain-specific code (maybe inside the action’s execute Judge) would handle side effects. The inclusion is just to illustrate extensibility.
+
+IGoapGoal
+/**
+ * A goal represents a desired state outcome. For simplicity, it can be treated as a predicate on world state.
+ */
+public interface IGoapGoal<S> {
+    /** 
+     * Checks if this goal is achieved in the given world state.
+     * (Can be used for AgentLoop.isComplete or for planner goal test.)
+     */
+    boolean isSatisfied(S state);
+
+    /**
+     * Optional: a priority or utility score for this goal given the current state.
+     * Higher values mean the goal is more urgent/important.
+     * This can help a goal selection system decide between goals.
+     */
+    default double evaluatePriority(S state) {
+        return 1.0; // default all goals equal priority
+    }
+}
+
+
+This interface is fairly minimal. The isSatisfied method is crucial both for the planner (to know when it has reached a goal state) and for the agent (to know when to stop executing). The evaluatePriority is an optional extension that could be used outside the GOAP planner itself (e.g., if an agent has multiple goals, a separate component could query each goal’s priority and choose one to focus on). Within our GOAP execution, we assume one active goal at a time. Goals might be implemented by storing a target subset of world state (like a map of required keys/values) and then isSatisfied just checks those against the state.
+
+IPlanner
+/**
+ * Planner interface for GOAP.
+ * Responsible for computing a sequence of actions to achieve a goal from an initial state.
+ */
+public interface IPlanner<S> {
+    /**
+     * Finds a plan from the given initial state to satisfy the given goal.
+     * @param initialState the starting world state
+     * @param goal the goal to achieve
+     * @param actions the set of actions available to use
+     * @return an optional Plan (empty if no valid plan found).
+     */
+    Optional<Plan<S>> plan(S initialState, IGoapGoal<S> goal, Set<IGoapAction<S>> actions);
+}
+
+
+The IPlanner interface defines a single method plan which returns an Optional<Plan<S>>. A Plan<S> can be a simple class we define to hold the ordered list of actions (and perhaps the total cost and any intermediate states for analysis). For example, Plan might look like class Plan<S> { List<IGoapAction<S>> actions; double cost; }. If no plan is found, the method returns Optional.empty(). Our default implementation will be something like AStarPlanner<S> implementing IPlanner<S>, using the A* algorithm described earlier. We will ensure this planner algorithm respects the interfaces (checkPreconditions, applyEffects, etc.) when exploring actions.
+
+Because we want the planner to be extensible, one could implement alternative planners under this interface: for instance, a breadth-first planner (for shortest plan length if all costs equal), or a hierarchical planner (HTN) could in principle implement IPlanner as well, allowing the agent to swap out planning strategies. We could also implement incremental planners (like LPA*, etc.) under the same interface if we decide to optimize replanning by retaining search results. All such implementations produce the same output format: a Plan object for the executor to consume.
+
+IWorldStateProvider
+/**
+ * Abstracts how the GOAP system obtains the current world state.
+ * This decouples the planning module from the actual state management in the agent or environment.
+ */
+public interface IWorldStateProvider<S> {
+    /** @return the current world state for the agent (or environment) */
+    S getWorldState();
+}
+
+
+This interface may appear simplistic, but it is very important for integration. The idea is that the agent (or some system) will implement IWorldStateProvider to supply the GOAP system with up-to-date state information whenever planning or action execution is about to occur. For example, if our WorldState is a class that the agent updates every tick from sensor data, the provider could simply return that object. In a multi-agent setting, an implementation might return a projection of the global state relevant to a particular agent. Or if the world state is distributed (some on agent, some in environment), the provider could assemble the needed facts.
+
+By using this interface, our Planner and Plan Executor do not need to know about the rest of the agent or how the state is stored. They just call provider.getWorldState() as needed. In practice, our agent class might implement IWorldStateProvider itself, or we might have a small wrapper that pulls from the Judge’s context (since JudgmentContext might already hold the world state). For example, the agent could do: planner.plan(worldStateProvider.getWorldState(), goal, actions) when it wants to plan.
+
+IPlanExecutor
+/**
+ * Executes a plan of actions in sequence, handling dynamic checks and replanning if necessary.
+ */
+public interface IPlanExecutor<S> {
+    /**
+     * Execute the given plan towards the specified goal, using the latest world state from the provider.
+     * This may perform partial execution and replan if something goes wrong.
+     * 
+     * @param plan the plan to execute (a sequence of actions)
+     * @param goal the goal we are trying to achieve (for verification)
+     * @param stateProvider source of current state (will be queried and possibly updated)
+     * @param planner a planner instance to use for replanning if needed
+     * @return true if the goal was achieved by the end, false if not.
+     */
+    boolean executePlan(Plan<S> plan, IGoapGoal<S> goal, IWorldStateProvider<S> stateProvider, IPlanner<S> planner);
+}
+
+
+The IPlanExecutor.executePlan runs through the actions in the given plan. We pass in the stateProvider so that it can get the current state at each step (and optionally update it). We also pass the goal so the executor can check for goal completion or use it in replanning decisions. We include the planner as a parameter; this is to allow the executor to call planner.plan() again if it detects the need to replan (though one could design the executor to have a reference to a planner at construction time instead). The return value is a boolean indicating whether the execution resulted in the goal being achieved (true) or if the execution terminated without achieving the goal (false). In a robust implementation, we might also want to return a status or final state, but a boolean success flag suffices to integrate with the agent’s decision cycle (e.g., if false, the agent knows the goal wasn’t reached and could take other action or report failure).
+
+PlanExecutor implementation logic (informative): A typical implementation would loop over plan.actions. For each action:
+
+Fetch current state (via stateProvider.getWorldState()).
+
+Check action.checkPreconditions(state). If this returns false, break and invoke replanning: essentially, the plan is no longer valid. (This method might also log which precondition failed.)
+
+If preconditions pass, call action.performActionInWorld() (if we are executing real effects) and/or update the state: state = action.applyEffects(state). After this, possibly update the provider’s stored state (if the provider holds a reference to a mutable state, or if it’s an immutable approach, update the reference).
+
+Then check action.checkPreconditions(state) or action.verifyEffects(previousState, state) to ensure the expected effects happened. If this returns false, it indicates the action did not achieve what it was supposed to (e.g., maybe a probability or external interference caused a different outcome). In that case, one strategy is to also abort and set needReplan = true.
+
+If effects are verified, then optionally check goal.isSatisfied(state). If true, we can return success immediately (goal achieved early).
+
+Otherwise, continue to next action.
+
+After the loop, if we finished all actions and didn’t return early, we check the goal one more time on the final state. If achieved, great. If not achieved (which ideally shouldn’t happen if the plan was correct), that could be treated as a failure (or trigger a replan if attempts remain).
+
+The executePlan could incorporate a planner call if a failure was detected. For example, in pseudo-code:
+
+if (!action.checkPreconditions(currState)) {
+    // plan invalid, trigger replan
+    Optional<Plan<S>> newPlan = planner.plan(currState, goal, actions);
+    if (newPlan.isPresent()) {
+        return executePlan(newPlan.get(), goal, stateProvider, planner);  // recursion or loop
+    } else {
+        return false;  // no plan possible
+    }
+}
+
+
+One must be careful to avoid infinite loops; typically we’d count how many replans have happened and give up after a few attempts. This is why the interface takes a planner – so the executor can obtain a new plan. We might also give the executor the full action set or have it accessible globally to pass to the planner.
+
+In our integration, the PlanExecutor likely runs inside the agent’s thread of execution (or tick). We can either block until the plan is done (not ideal for real-time simulation if the plan is long), or execute one action per tick. The interface as given executes the whole plan; we could extend it or have an alternate method to execute a single action step. However, controlling that at the agent loop level is easier: e.g., call executePlan but inside it, after each action, return control to the main loop (this would complicate the interface with coroutine-like behavior). To keep it simple, we assume either the plan is short enough or the environment is turn-based such that executing the whole plan at once is acceptable. For real-time games, you might integrate the PlanExecutor in an asynchronous way (start execution, then each tick check if action finished, etc.), but that’s an implementation detail beyond this design document.
+
+4. Integration Notes
+
+With the architecture and interfaces defined, integrating the GOAP system into the agent harness involves connecting these components to the agent’s lifecycle and the Judge-based abstractions. Here are the key integration considerations and steps:
+
+Initializing the GOAP module: The agent (or a higher-level AI system) needs to initialize the GOAP components, usually at game start or agent spawn. This means creating the available action instances (perhaps reading from a config or instantiating classes), creating one or more goal objects (or goal factories), and instantiating a Planner (e.g. new AStarPlanner<>(heuristicFunction) with a chosen heuristic). These could be assembled into a structure, for example: GoapModule containing Set<IGoapAction> actions; IPlanner planner; IWorldStateProvider stateProvider;. This module can be part of the agent object or a singleton service if appropriate.
+
+Agent main loop workflow: Each agent’s update cycle should incorporate GOAP decision-making as follows:
+
+Goal selection: Determine or update the agent’s current goal. If the agent architecture has multiple goals or dynamic goals, this might involve checking which goal is most relevant. For instance, the agent could have a list of possible goals and evaluate their priority via goal.evaluatePriority(state) and pick the highest. In a simpler scenario, the agent might have a fixed goal or one assigned by the game scenario.
+
+Planning phase: If the agent has no current plan or the current plan was finished/invalidated, invoke the Planner. For example, call planner.plan(currentState, currentGoal, actions). Use the IWorldStateProvider to get currentState. The result is an Optional<Plan>. If a plan is found, store it as the agent’s active plan. If no plan is found, the agent might have to handle this (perhaps pick a different goal or enter an idle/failure state). In many games, if a plan fails, the agent might just try again later or choose a different approach. Our design surfaces the “no plan” case so it can be handled gracefully (e.g., log it, try another goal, etc.).
+
+Execution phase: If an active plan exists, the agent executes it step by step using the Plan Executor. If we use the synchronous executePlan approach, the agent can call it and get a success/failure at the end. In a frame-based game loop, however, you often don’t want to lock the agent into computing everything at once. Instead, you would execute one action per frame. This can be done by either modifying PlanExecutor to do one step at a time, or simply by controlling it in the agent loop:
+
+Check if the agent is currently performing an action (maybe the actions themselves take time).
+
+If not, take the next action from the plan:
+
+Do a precondition check (canExecute). In our harness, this could literally be a call to a Judge: e.g., if (!action.checkPreconditions(state)) { plan = null; needReplan = true; }.
+
+If preconditions pass, perform the action. This could mean setting some state like “moving to target” or calling an instantaneous effect. If actions are instantaneous in our simulation, just update the world state immediately via applyEffects. If not instantaneous, you might initiate the action and return, marking that the agent is busy until the action completes.
+
+After performing, verify effects (didSucceed). If it failed, decide to replan (set current plan to null).
+
+If succeeded, advance the plan index.
+
+Check goal completion (isComplete). If achieved, clear the current plan (or mark goal as achieved).
+
+End of tick.
+
+Next tick, if plan still has more actions, continue; if plan was cleared or goal achieved, go to planning phase (maybe pick a new goal).
+
+This logic can either be coded imperatively as above, or as we showed earlier, wrapped into the AgentLoop with Judges. The Judge-centric approach essentially formalizes each of those checks:
+
+canExecute Judge internally does checkPreconditions.
+
+The generator calls the action’s execution.
+
+The didSucceed Judge does the verifyEffects check.
+
+The isComplete Judge checks the goal.
+
+Using the Judge and AgentLoop approach makes the integration very clean with the harness. We could, for example, register each GOAP action as a small Judge or use existing Judge combinators to represent the goal conditions. The provided harness likely has utility classes like Judges.all(...) to combine conditions. Our goal satisfaction can be turned into a composite Judge that all required facts equal desired values.
+
+Utilizing the Judge framework: The Judge framework isn’t just for plugging into the loop, it’s also a diagnostic tool. We should take advantage of it for logging and debugging:
+
+Each action’s checkPreconditions can return not just true/false, but a Judgment object. For example, we can have return Judgment.fail("Needs weapon") if a precondition fails because the agent has no weapon. This message could later be logged to understand agent decisions. In the interface we presented, we simplified it to a boolean for clarity. In an actual implementation, we might integrate it more tightly: e.g., IGoapAction.checkPreconditions could accept a JudgmentContext and return a Judgment, as was sketched in our research notes. This would effectively be using the Judge system directly.
+
+The verifyEffects step can similarly produce a Judgment explaining which effect wasn’t observed.
+
+The Goal’s isSatisfied can be implemented as or wrapped by a Judge to easily slot into the loop’s isComplete.
+
+By doing so, any existing tooling in the harness for Judges (such as monitoring which judges fail or pass) can automatically apply to GOAP. This is a major rationale for designing GOAP as a special case of the Judge-centric architecture – it means we don’t have to reinvent debugging or result handling mechanisms.
+
+Agent coordination with GOAP: The agent needs to know when to invoke GOAP planning vs. doing other things. If GOAP is the only decision mechanism, then each cycle it either follows the current plan or finds a new one. However, many agents might have simpler behaviors for certain situations or an overarching state machine that sometimes uses GOAP for complex tasks. Our integration should allow that. For example, an agent could have a high-level behavior tree that on a certain branch (“attack player”) decides to use GOAP to plan the attack. In such a case, we might instantiate the GOAP AgentLoop only for that branch. The harness’s Strategy abstraction (if present) can help orchestrate this. The architecture diagram (above) showed that our AgentLoop can be just one of many, coordinated by a Strategy. In our design, we assume GOAP is the primary decision maker, but it’s useful to note we can mix it with other patterns:
+
+Fallback to scripted behavior: If GOAP fails to find a plan, the agent could fall back to a default behavior (like wandering or idling). The integration should handle “no plan” gracefully. For instance, the plan() method returning empty can be interpreted by the agent as “can't achieve goal now”, and the agent might either choose a different goal or simply wait and try again later. We should ensure to log or signal this event so it’s not silent.
+
+Emergency replanning triggers: Sometimes outside events should invalidate the current plan immediately (e.g., a high priority goal appears like “dodge grenade”). In such cases, the agent’s higher-level logic might interrupt the GOAP executor. This could be implemented by checking each tick if a higher-priority goal came up and if so, aborting the current plan (perhaps setting a flag that causes the PlanExecutor loop to break). Our design is extensible to handle that: since goal evaluation can be done each tick, an agent can simply replace the current goal and dump the plan, and our next cycle will plan for the new goal. This dynamic goal switching is supported by the architecture though it needs careful management to avoid thrashing (rapidly switching goals). A priority system as mentioned helps mitigate that (only switch if new goal is significantly higher priority).
+
+Synchronization with environment: In a real environment, actions might not have instantaneous effects. For integration, we must consider that the GOAP system may need to wait for the world state to update from the environment after an action. For example, if “MoveTo(x)” action is executed, the agent might take a few seconds to actually reach x and the world state (agentPosition) won’t be updated until then. If our GOAP executor is running in the same update loop, we should model the action as ongoing until completed. This often requires the concept of action status (running, completed, failed). Our simple PlanExecutor didn’t explicitly model that, but we can incorporate it by having each action’s performActionInWorld indicate when it’s done (perhaps via a future or callback, or by the agent checking conditions in update). One straightforward integration is:
+
+The agent issues the action (e.g., sets a target for movement) and then defers GOAP planning/execution until the action’s effect becomes true or it fails. Essentially the agent would not advance to the next plan step until hasArrived is true or some timeout triggers.
+
+This can be implemented within the Judge framework by making the didSucceed Judge for the move action wait until the world state reflects the new position. The AgentLoop would keep returning IN_PROGRESS (if such a verdict exists) until then. The Judge framework likely supports a notion of continuing until success/failure.
+
+For our design plan, the key point is that the GOAP system relies on up-to-date world state from the environment each cycle, and the harness must ensure that (through the WorldStateProvider). If the harness is already providing a refreshed state each tick, then our planner and executor will naturally work with correct information.
+
+Judge and Plan Execution Example: To illustrate integration, imagine an action defined as:
+
+class AttackTargetAction implements IGoapAction<WorldState> {
+    // pre: targetVisible == true, hasAmmo == true
+    // eff: targetDead = true (possibly ammo decremented)
+    ...
+}
+
+
+In the harness, we could implement this action’s checks with Judges:
+
+Judge canExecuteAttack = ctx -> {
+    WorldState state = ctx.state().get("worldState");
+    boolean can = state.targetVisible && state.hasAmmo;
+    return Judgment.fromCondition(can);
+};
+Judge didSucceedAttack = ctx -> {
+    WorldState state = ctx.state().get("worldState");
+    return Judgment.fromCondition(state.targetDead);
+};
+
+
+These Judges could be attached to the agent loop if AttackTargetAction was a single-step agent process. But since we are embedding in GOAP, we call those internally. What’s nice is we could reuse canExecuteAttack inside AttackTargetAction.checkPreconditions (by invoking it with a context built from a given state). This shows how integration avoids duplicate logic: the same condition checking mechanism serves both planning and execution monitoring.
+
+In summary, the GOAP integration requires ensuring the agent’s lifecycle calls the planner at appropriate times, executes returned plans stepwise, and leverages the Judge framework for all decision gates. Our design allows the GOAP system to plug in as either the primary agent behavior loop or a sub-component. By mapping GOAP constructs to the Judge/Loop constructs (preconditions → canExecute, effects → didSucceed, goal → isComplete), we achieve a consistent integration where from the outside, the GOAP-driven agent still looks like any other agent following the harness’s rules. This means we can use existing infrastructure like the Judge-based Refiner or Evaluator if those exist, to further refine plans or evaluate their quality, again demonstrating that GOAP is not an isolated add-on but a natural fit within the agent architecture.
+
+5. Configuration & Extensibility
+
+The GOAP system as designed is highly configurable and intended to be extended over time. Here we discuss how one can customize or grow the system for new domains or multi-agent scenarios:
+
+Defining Actions and Goals: The interface-driven design allows new actions and goals to be added by implementing the respective interfaces, without changing the core planner or executor. For example, if designing a new game scenario, a developer can list out the required actions (with their preconditions/effects) and implement each as a class. These can then be registered in the agent’s action set. To make this easier, one could create a framework for action definitions: e.g., a base class GoapActionBase that stores preconditions/effects as simple data structures (maps of state keys to required values), and provides a default checkPreconditions/applyEffects implementation. Then defining a new action might be as simple as constructing an instance of a GoapActionBase("Attack", precondMap, effectMap, cost). This would reduce boilerplate. Similarly, goals could have a base class where you just supply the target conditions. Our design did not mandate a specific implementation, but it’s something that can be built on top. We’ve prioritized clarity and explicitness (hence the interface methods) but the system can be made more data-driven if needed.
+
+Tuning the World State Model: The world state representation might evolve. Currently, we assume a relatively small set of facts relevant to planning (to keep search space tractable). For extensibility, one might integrate a more complex state, or even hook into a global game state. For instance, in a multi-agent scenario, part of the world state might be “other agents’ locations” or shared resources status. The WorldStateProvider could be implemented to gather that from a central source (like a blackboard or game world object). Our architecture can accommodate this – you might have a GlobalWorldState that multiple agents reference, with each agent also having some personal state. The key is to ensure the Planner has the information it needs. If the state becomes too complex (e.g., including continuous variables or large maps of positions), the action definitions and heuristics might need to be more sophisticated. But structurally, nothing prevents it – one could plan over a graph of waypoints for navigation actions, for example, by including the agent’s position in the state and having actions that change it.
+
+Single-agent vs Multi-agent: Out of the box, the design handles single-agent planning. For multi-agent support, there are a few ways to extend:
+
+Distributed planning: Each agent runs its own GOAP planner independently. This is effectively what the architecture already allows (you can instantiate a GOAP module per agent). The challenge then is coordination: without care, multiple agents might plan for the same resource or interfere with each other’s plans. A straightforward extensibility point is to introduce a coordination layer. For instance, one can implement a reservation system as done in the Core Keeper multi-agent GOAP case. This might mean extending the world state to include flags like “resource X reserved by agent Y”, and making those part of preconditions for certain actions. E.g., a “MineGold” action might have precondition “goldMineFree == true”, and once an agent commits to it, it sets that to false (so others won’t plan to use the same mine). This kind of mechanism can be added by the designer via additional state facts and slight modifications to actions, without changing the planner algorithm. Studies have shown that such approaches can foster the illusion of collaboration without requiring agents to explicitly communicate – each agent’s GOAP planner, by seeing the updated world state (with reservations or shared goals), will naturally avoid conflicts and work towards collective outcomes.
+
+Goal allocation: In multi-agent scenarios, there might be team goals that need to be broken down. Our current GOAP design is agent-centric (one agent, one plan). To extend this, one could create a higher-level planner that assigns sub-goals to different agents. For example, a goal “build a base” could be split into sub-goals for different agents (“gather wood”, “gather stone”, “assemble structure”). This starts to enter Hierarchical Task Network (HTN) territory. One way to integrate that is to have certain GOAP actions whose effect is essentially that another agent achieved a sub-goal. Implementation-wise, one agent could plan and realize “I need help from agent B – ask B to do X” as an action. Then agent B would separately plan for X as its goal. This is a more complex extension, but the point is our system’s modularity would allow injecting multi-agent logic at the level of goal selection or by adding specialized actions (like communication actions or task assignments).
+
+Shared planner: Another approach is a single planner that handles multiple agents jointly (multi-agent planning). That typically involves including all agents’ states in the planning state and having actions for each agent. While academically interesting, this can explode the search space and is likely not needed in a game context with many agents. So, we lean towards the distributed approach with light coordination as above.
+
+Importantly, the architecture’s separation of concerns – each agent has its own actions, goals, planner – means we can spin up N agents with GOAP without them stepping on each other in code. The linear scaling observed in the Core Keeper study suggests that a well-designed distributed GOAP (with perhaps O(#agents * #actions) cost) is feasible. We just have to ensure to optimize the planner (which we discuss under enhancements) if we are going to support potentially dozens of agents planning simultaneously.
+
+Parameterization and Domain Rules: We can extend the system to handle more than simple booleans. For example, if we want to incorporate numeric effects (like health, ammo counts), we can do so by adjusting our precondition/effect model. Instead of just equality, we might want conditions like “health > 30”. We could implement this by allowing preconditions to be arbitrary predicate functions on the state, not just static values. That’s a minor extension: e.g., IGoapAction.checkPreconditions could house any logic. If we wanted a more declarative approach, we could create a small DSL or use lambda expressions to define conditions. Our design doesn’t limit that – as long as checkPreconditions returns a boolean (or Judgment), it can check any complex condition. Similarly, effects might not just set values; they might increment/decrement (like ammoCount = ammoCount - 1). We might update our state representation to handle that (for instance, an effect could carry an operation or we just implement it imperatively in applyEffects). These are domain-specific concerns that the architecture can handle through the flexibility of the action interface.
+
+Extending Planner Algorithms: The architecture allows replacing or upgrading the Planner without affecting other components. If performance becomes an issue, we could implement a Heuristic Weighting (WA)* to speed up search at the cost of optimality, or an Anytime algorithm (ARA)* that finds a quick suboptimal plan and improves it if time allows. We could also implement Lifelong Planning A* (LPA*) for agents that repeatedly plan in a changing environment – LPA* would reuse previous planning results to avoid recomputation when the world changes slightly. For dynamic environments with lots of replanning, LPA* or D* Lite could be very beneficial. Our IPlanner interface can be implemented by any of these algorithms. For example, we might have LPAStarPlanner that maintains an internal search tree between calls. To integrate, one would just instantiate that planner instead of the default. No changes to actions or goals are needed because they adhere to the same interface.
+
+Another possible extension is Hierarchical planners (HTN) – although a different paradigm, one could wrap an HTN planner to present an IPlanner interface (the plan() method would internally use HTN methods to produce a sequence of primitive actions). This could be useful if we find GOAP struggles with very large action spaces and we want to encode some knowledge about sub-tasks. Given that HTN and GOAP can be complementary, an advanced extension is to allow the agent to use HTN for high-level tasks and GOAP for low-level – but that’s beyond the initial scope. Still, designing around interfaces makes such experimentation possible in the future.
+
+Debugging and Logging: Extensibility isn’t only about new features, but also about tooling. We can enhance the GOAP system with debug logs, visualizations, and testing hooks. For instance:
+
+We can add a method to the Planner to return statistics about the last search (nodes expanded, time taken, etc.), which can be logged or displayed to developers.
+
+We could integrate with the Judge framework’s logging: if the harness provides a way to trace which Judges passed or failed each tick, we would see the GOAP precondition checks appear in those traces. This can greatly help to understand why an agent chose a particular plan or why it failed to find one.
+
+Visual debugging: Since a Plan is a sequence of actions, one could easily print it or even show it in a UI (e.g., “Plan: [MoveTo(A), PickUp(Key), MoveTo(B), OpenDoor] cost=10”). We should include toString implementations or similar for actions and plans for this purpose.
+
+During execution, if a replan happens, we can log “Replanning triggered because action X failed preconditions” or “Replanning because environment changed”. This kind of information is invaluable for tuning the AI behavior.
+
+Dynamic Replanning & Interruption: We touched on this earlier, but to emphasize as an extensible feature: our design supports dynamic replanning. That means if the world state changes in a way that invalidates the current plan (or provides a better opportunity), the agent can adapt. We included in PlanExecutor the concept of replanning on failure. We can extend that to goal re-evaluation. For example, suppose mid-plan a new goal with higher priority appears (like the agent suddenly is under attack, so “survive” becomes more important than whatever it was doing). The architecture allows the agent to interrupt its current goal and switch: simply assign a new current goal and either discard or pause the old plan. The system will then plan for the new goal next. The ability to cancel plans is important; as noted in one reference, an agent needs the ability “to cancel the plan and reassess, even if the sequence isn’t complete” when the environment changes. Our design achieves that by not tying the agent irrevocably to a plan: each tick or action step, we check conditions and can break out if needed. We could formalize an interruption mechanism where a higher-level controller sets a flag or the plan executor checks for goal changes on each loop iteration. That would be a small addition to PlanExecutor (like if (currentGoal != originalGoal) abort). This ensures responsiveness to new events.
+
+Scalability considerations: As we extend to larger domains or more agents, we may need to optimize:
+
+Caching plans or subplans: If the agent often reuses certain action sequences, we could cache the results of previous plans (memoization based on start and goal). Classical planners sometimes use plan libraries.
+
+Splitting planning across frames: If planning takes too long for a single frame, we could allow the planner to run iteratively (e.g., limit expansions per tick). Because we have a heuristic search, we could implement an anytime approach where the planner yields control and resumes next tick. This might require changes to the planner interface (like a non-blocking step() method), but it’s an idea for extensibility if needed.
+
+Multi-threading: In some cases, it might be possible to run the planner on a separate thread so as not to stall the game loop. Our design doesn’t preclude that; one could have the GOAP module operate in an async fashion, signaling back when a plan is ready. Since our interface is synchronous, you’d wrap it in a Future or similar in that case.
+
+To summarize, the GOAP system is built in a modular way so that new actions/goals (hence new behaviors) can be added easily, and the internal algorithms can be improved or swapped with minimal impact on the rest. This design emphasizes reusability: the same planning core could be used by different agents or even different games by just changing the domain model (actions, goals, state). Moreover, it anticipates multi-agent expansions by allowing agents to share information via world state and to coordinate by simple mechanisms like reservations or shared goals. The integration with the Judge framework also means as the harness evolves (e.g., adding more complex judgment types or learning-based Judges), the GOAP conditions can evolve with it (imagine a fuzzy precondition that says “probably enough ammo”, which could be a Judge with a threshold instead of a strict boolean — our system could accommodate that by just changing the checkPreconditions logic or using a non-binary Judgment). This shows how GOAP can live within a larger ecosystem of AI techniques and benefit from a unified architecture.
+
+6. Optional Enhancements and Future Improvements
+
+Finally, we highlight some optional enhancements and variations that can be considered, beyond the basic GOAP implementation:
+
+Alternative Planning Algorithms: As mentioned, we can implement variants like Weighted A* (to trade off optimality for speed by inflating the heuristic), Anytime Repairing A* (ARA*) which can quickly find a feasible plan and then continue to refine it if time permits, or Hierarchical A* if we incorporate some hierarchy in states. For dynamic worlds, Lifelong Planning A* (LPA*) or D* Lite are attractive because they can update an existing plan incrementally when small changes occur, rather than replan from scratch. Integrating LPA* would involve the planner keeping state between calls (we’d likely make the planner an object with an internal graph that can be updated). This could significantly improve performance in cases where the world state is mostly static with occasional changes. Since our interfaces don’t restrict how the planner works internally, these can be explored with minimal change to how the rest of the system calls the planner.
+
+Heuristics and Domain Knowledge: The quality of the planner (especially A*) depends on the heuristic. An admissible heuristic guarantees optimal plans but sometimes a slight inadmissibility (underestimation) is acceptable in games if it speeds up planning. We might allow the heuristic to be configured. For example, if we know that certain goals involve a minimum number of steps, we can set the heuristic to that. We could even learn heuristics offline (e.g., train a regression to predict cost-to-go from state features). The planner interface could allow injecting a heuristic function (as a Function<S, Double> in the AStarPlanner constructor, for instance). This kind of configuration can be documented and exposed to designers to tweak AI performance.
+
+Parallel and Distributed Planning: For multi-agent setups, if many agents need to plan at once, we could run their planners in parallel threads (assuming thread-safe state access). The design currently doesn’t account for any global coupling that would prevent that; each agent’s GOAP operates on its own state (or partitions of a global state) and uses its own planner instance. Thus it’s inherently parallelizable. If we had a large number of NPCs using GOAP, we might throttle how many can plan per frame to avoid spikes. This can be handled by a manager that queues planning jobs (e.g., only plan for a few agents each tick). The linear scaling result from Core Keeper suggests that without heavy optimization we can manage quite a few agents, but we keep this in mind as a scheduling enhancement.
+
+Integration with Learning/Adaptation: In the future, one might integrate a learning algorithm to adjust action costs based on experience (e.g., if an action frequently fails or is slow, increase its cost to make the planner choose alternatives). The architecture allows this: costs are properties of actions, so a learning module could periodically update the cost values. The planner will then naturally start favoring others. We could also gather statistics through our Plan Executor (like action success rates) and use that to inform such adjustments.
+
+Logging and Debug Interface: Providing a debug interface is a near-term enhancement to aid developers. For instance, we could implement a special Judge or a Listener that hooks into the planner to output each step of the search (for academic or deep debugging, though that might be too verbose for regular use). Another idea is a plan visualization tool: since we have intermediate states in the Plan (our Plan class could store the intermediate states if we want), we could potentially show how the state evolves over the plan. This could be as simple as printing the key state facts at each step. This is very useful for verifying that the actions have the intended effects and that the plan indeed reaches the goal state.
+
+Dynamic Plan Optimization: The basic GOAP finds a plan and then tries to execute it to completion (with replanning on failure). An enhancement would be to allow continuous plan optimization. For example, even while executing a plan, the agent could keep the planner running in the background to see if a shorter/cheaper plan exists given new information. If it finds a better plan, it could switch to it. This is related to the concept of ** anytime planning**. In practice, frequent replanning can look erratic (agent constantly changes its mind), so it should be used carefully (perhaps only if the improvement is significant or the current plan hasn’t made much progress yet). Still, the architecture can support it: you’d simply call plan() again with the current state and same goal, and if the result’s first action is different (and better) than the current plan’s next action, you might decide to swap plans. This requires comparing plan costs or lengths. One could incorporate a threshold or hysteresis to avoid oscillation.
+
+Plan Execution Monitoring & Safety: Another optional aspect is to include safety checks during execution. For example, if an action is taking too long or an unexpected condition arises (not directly related to the goal, like a new threat), the Plan Executor might abort. We have implicitly covered that by goal switching and precondition checks, but one might formalize a timeout or monitoring for exogenous events. The Judge framework can help here: for instance, an earlyTermination Judge could be placed that stops the loop if some emergency condition becomes true. Ensuring the GOAP executor respects such signals can make the agent more robust. Since our integration uses the same loop mechanism, adding an extra Judge for “should we terminate now?” is possible (in the AgentLoop builder, this would be the shouldExecute or an external monitor).
+
+Hierarchical and Compound Actions: We can extend the action representation to allow hierarchical planning to some degree. A compound action could be something that itself requires a small plan (like “BuildHouse” might involve sub-actions “GatherWood” and “BuildFoundation”). In GOAP, typically all actions are primitive. But our architecture could allow an action’s execution to invoke another planning process. For example, BuildHouseAction.performActionInWorld() might internally call a planner for sub-goal “houseBuilt”. This way, we layer GOAP within GOAP. This is experimental, but possible thanks to the modular design. We’d have to be careful to avoid infinite recursion or overly complex nesting, but it could handle certain multi-step tasks more efficiently by pre-defining a sub-plan structure. If many actions naturally break down that way, it might be better to use an HTN planner; however, demonstrating that our system can express HTN-like behavior is useful. In fact, since Judges and Generators are so general, one could implement an HTN method as an action’s generator and still run it in the same loop. This further reinforces that our GOAP integration is not limiting the architecture – it’s extending it in a controlled manner.
+
+In conclusion, the basic GOAP system we designed provides a strong foundation: it covers the essential components (State, Actions, Goals, Plan, Execution) and integrates them with the agent harness (via Judges and the AgentLoop). The design meets the immediate requirements (single-agent GOAP planning within the existing framework) and is robust to future needs. By adhering to interface-driven design and drawing clear parallels to the Judge-centric model, we ensure that any future enhancements – whether adding more actions, scaling to multiple agents, or swapping out the planning algorithm – can be done with minimal changes to the overall system. This satisfies the design goals of extensibility and maintainability, while providing the agent with a powerful new capability: the ability to think ahead and choose actions based on goals and world state, rather than just reacting.
+
+Through this integration, we bridge classical AI planning with our modern reactive framework, showing that GOAP can be seen as a specialized case of our agent architecture (with boolean conditions and A* search). This unified approach opens the door to hybrid agents that can combine deliberate planning with other AI techniques (like utility-based decisions or ML-driven behaviors) under one umbrella. Each part of our design is documented and modular, so developers can trust it as a baseline and extend it knowing the pieces will fit naturally into the larger system.
