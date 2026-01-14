@@ -31,5 +31,5 @@ Thumbs.db
 *.log
 logs/
 
-# Supporting repos (cloned for reference)
-plans/supporting_repos/
+# Plans and design docs (internal)
+plans/
