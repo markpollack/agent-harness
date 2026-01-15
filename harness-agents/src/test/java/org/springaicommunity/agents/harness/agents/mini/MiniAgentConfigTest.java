@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.springaicommunity.agents.harness.examples.miniagent;
+package org.springaicommunity.agents.harness.agents.mini;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;

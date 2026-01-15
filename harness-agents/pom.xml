@@ -10,11 +10,12 @@
         <version>0.1.0-SNAPSHOT</version>
     </parent>
 
-    <artifactId>harness-examples</artifactId>
-    <name>Harness Examples</name>
-    <description>Example implementations of all patterns</description>
+    <artifactId>harness-agents</artifactId>
+    <name>Agent Harness Agents</name>
+    <description>Ready-to-use agent implementations including MiniAgent</description>
 
     <dependencies>
+        <!-- Internal modules -->
         <dependency>
             <groupId>org.springaicommunity.agents</groupId>
             <artifactId>harness-api</artifactId>
@@ -25,7 +26,7 @@
         </dependency>
         <dependency>
             <groupId>org.springaicommunity.agents</groupId>
-            <artifactId>harness-agents</artifactId>
+            <artifactId>harness-tools</artifactId>
         </dependency>
 
         <!-- Spring AI -->
@@ -41,6 +42,12 @@
             <groupId>org.springframework.ai</groupId>
             <artifactId>spring-ai-anthropic</artifactId>
             <scope>test</scope>
+        </dependency>
+
+        <!-- spring-ai-agent-utils for tools -->
+        <dependency>
+            <groupId>org.springaicommunity</groupId>
+            <artifactId>spring-ai-agent-utils</artifactId>
         </dependency>
 
         <!-- zt-exec for process execution -->
