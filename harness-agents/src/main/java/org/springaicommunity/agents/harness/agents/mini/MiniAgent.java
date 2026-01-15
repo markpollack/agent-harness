@@ -16,29 +16,46 @@
 package org.springaicommunity.agents.harness.agents.mini;
 
 import io.micrometer.observation.ObservationRegistry;
+import org.springaicommunity.agents.harness.callback.AgentCallback;
 import org.springaicommunity.agents.harness.core.ToolCallListener;
 import org.springaicommunity.agents.harness.patterns.advisor.AgentLoopAdvisor;
+import org.springaicommunity.agents.harness.patterns.advisor.AgentLoopListener;
 import org.springaicommunity.agents.harness.patterns.advisor.AgentLoopTerminatedException;
 import org.springaicommunity.agents.harness.patterns.observation.ToolCallObservationHandler;
+import org.springaicommunity.agents.harness.core.LoopState;
+import org.springaicommunity.agents.harness.core.TerminationReason;
+import org.springaicommunity.agent.tools.AskUserQuestionTool;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
+import org.springframework.ai.chat.memory.ChatMemory;
+import org.springframework.ai.chat.memory.MessageWindowChatMemory;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.support.ToolCallbacks;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.model.tool.DefaultToolCallingManager;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 
 /**
  * MiniAgent - A minimal SWE agent leveraging Spring AI's built-in agent loop.
  * <p>
  * Spring AI's ChatClient + ToolCallAdvisor handles the entire tool execution loop.
- * This agent adds: tools, observability wiring, and a simple API.
+ * This agent adds: tools, observability wiring, session memory, and a simple API.
  * <p>
- * Under 100 lines - terser than Python mini-swe-agent because Spring AI does the heavy lifting.
+ * Features:
+ * <ul>
+ *   <li><strong>Session memory</strong>: Optional multi-turn conversation support</li>
+ *   <li><strong>Interactive mode</strong>: Enables AskUserQuestionTool for human-in-the-loop</li>
+ *   <li><strong>Callbacks</strong>: AgentCallback for TUI integration</li>
+ * </ul>
+ *
+ * @see MiniAgentConfig for configuration options
  */
 public class MiniAgent {
 
@@ -49,48 +66,85 @@ public class MiniAgent {
     private final List<ToolCallback> tools;
     private final ToolCallObservationHandler observationHandler;
     private final CountingToolCallListener countingListener;
+    private final ChatMemory sessionMemory;
+    private final boolean interactive;
+    private final String conversationId;
 
-    public MiniAgent(MiniAgentConfig config, ChatModel model) {
-        this(config, model, new LoggingToolCallListener());
-    }
-
-    public MiniAgent(MiniAgentConfig config, ChatModel model, ToolCallListener listener) {
-        this.config = config;
+    private MiniAgent(Builder builder) {
+        this.config = builder.config;
+        this.sessionMemory = builder.sessionMemory;
+        this.interactive = builder.interactive;
+        this.conversationId = builder.conversationId != null ? builder.conversationId : "default";
 
         // Create tools
         var toolsObj = new MiniAgentTools(config.workingDirectory(), config.commandTimeout());
-        this.tools = Arrays.asList(ToolCallbacks.from(toolsObj));
+        List<ToolCallback> toolList = new ArrayList<>(Arrays.asList(ToolCallbacks.from(toolsObj)));
+
+        // Add AskUserQuestionTool if interactive mode and callback provided
+        if (interactive && builder.agentCallback != null) {
+            var askUserTool = AskUserQuestionTool.builder()
+                    .questionHandler(questions -> builder.agentCallback.onQuestion(questions))
+                    .build();
+            toolList.addAll(Arrays.asList(ToolCallbacks.from(askUserTool)));
+        }
+        this.tools = toolList;
 
         // Wrap listener in counting listener for toolCallsExecuted tracking
-        this.countingListener = new CountingToolCallListener(listener);
+        ToolCallListener baseListener = builder.toolCallListener != null
+                ? builder.toolCallListener
+                : new LoggingToolCallListener();
+        this.countingListener = new CountingToolCallListener(baseListener);
 
         // Wire observability: ObservationRegistry → ToolCallObservationHandler → ToolCallListener
         this.observationHandler = ToolCallObservationHandler.of(countingListener);
         var registry = ObservationRegistry.create();
         registry.observationConfig().observationHandler(observationHandler);
 
-        // Create ChatClient with AgentLoopAdvisor - unified loop control
+        // Create ChatClient with advisors
         var toolCallingManager = DefaultToolCallingManager.builder()
                 .observationRegistry(registry)
                 .build();
-        var toolCallAdvisor = AgentLoopAdvisor.builder()
+
+        // Build AgentLoopAdvisor with optional listener bridge
+        var advisorBuilder = AgentLoopAdvisor.builder()
                 .toolCallingManager(toolCallingManager)
-                .maxTurns(config.maxTurns())
-                .build();
-        this.chatClient = ChatClient.builder(model)
-                .defaultAdvisors(toolCallAdvisor)
-                .build();
+                .maxTurns(config.maxTurns());
+
+        if (builder.agentCallback != null) {
+            advisorBuilder.listener(new CallbackLoopListener(builder.agentCallback));
+        }
+
+        var toolCallAdvisor = advisorBuilder.build();
+
+        // Build ChatClient with optional memory advisor
+        var chatClientBuilder = ChatClient.builder(builder.model)
+                .defaultAdvisors(toolCallAdvisor);
+
+        if (sessionMemory != null) {
+            var memoryAdvisor = MessageChatMemoryAdvisor.builder(sessionMemory)
+                    .conversationId(conversationId)
+                    .build();
+            chatClientBuilder.defaultAdvisors(memoryAdvisor);
+        }
+
+        this.chatClient = chatClientBuilder.build();
     }
 
-    /** Run the agent with the given task. */
+    /**
+     * Run the agent with the given task (single-task mode).
+     * <p>
+     * If session memory is configured, the conversation history is preserved
+     * across multiple run() calls.
+     */
     public MiniAgentResult run(String task) {
         log.info("MiniAgent starting: {}", truncate(task, 80));
-        countingListener.reset();  // Reset counter for this run
+        countingListener.reset();
         observationHandler.setContext("mini-agent", 1);
 
         try {
             ChatResponse response = chatClient.prompt()
-                    .user(config.systemPrompt() + "\n\nTask: " + task)
+                    .system(config.systemPrompt())
+                    .user(task)
                     .toolCallbacks(tools)
                     .call()
                     .chatResponse();
@@ -121,6 +175,49 @@ public class MiniAgent {
         }
     }
 
+    /**
+     * Chat with the agent (multi-turn interactive mode).
+     * <p>
+     * Unlike run(), this method is designed for interactive TUI use:
+     * - Callbacks are invoked for thinking, tool calls, and responses
+     * - Session memory preserves conversation across calls
+     * - Questions are routed to the callback for user interaction
+     *
+     * @param message User message
+     * @param callback Callback for events (must be same as builder callback)
+     * @return Agent result
+     */
+    public MiniAgentResult chat(String message, AgentCallback callback) {
+        if (callback != null) {
+            callback.onThinking();
+        }
+        return run(message);
+    }
+
+    /**
+     * Clear session memory, starting a fresh conversation.
+     */
+    public void clearSession() {
+        if (sessionMemory != null) {
+            sessionMemory.clear(conversationId);
+            log.debug("Session cleared for conversation: {}", conversationId);
+        }
+    }
+
+    /**
+     * Check if session memory is enabled.
+     */
+    public boolean hasSessionMemory() {
+        return sessionMemory != null;
+    }
+
+    /**
+     * Check if interactive mode is enabled.
+     */
+    public boolean isInteractive() {
+        return interactive;
+    }
+
     private long extractTokens(ChatResponse r) {
         if (r == null || r.getMetadata() == null || r.getMetadata().getUsage() == null) return 0;
         var t = r.getMetadata().getUsage().getTotalTokens();
@@ -133,6 +230,167 @@ public class MiniAgent {
 
     private String truncate(String s, int max) {
         return s == null || s.length() <= max ? s : s.substring(0, max) + "...";
+    }
+
+    // --- Static factory methods for backwards compatibility ---
+
+    /**
+     * Create a MiniAgent with default configuration.
+     * @deprecated Use {@link #builder()} instead
+     */
+    @Deprecated
+    public MiniAgent(MiniAgentConfig config, ChatModel model) {
+        this(builder().config(config).model(model));
+    }
+
+    /**
+     * Create a MiniAgent with a custom tool listener.
+     * @deprecated Use {@link #builder()} instead
+     */
+    @Deprecated
+    public MiniAgent(MiniAgentConfig config, ChatModel model, ToolCallListener listener) {
+        this(builder().config(config).model(model).toolCallListener(listener));
+    }
+
+    // --- Builder ---
+
+    public static Builder builder() {
+        return new Builder();
+    }
+
+    public static final class Builder {
+        private MiniAgentConfig config;
+        private ChatModel model;
+        private ChatMemory sessionMemory;
+        private boolean interactive = false;
+        private AgentCallback agentCallback;
+        private ToolCallListener toolCallListener;
+        private String conversationId;
+
+        private Builder() {}
+
+        /**
+         * Set the agent configuration (required).
+         */
+        public Builder config(MiniAgentConfig config) {
+            this.config = config;
+            return this;
+        }
+
+        /**
+         * Set the chat model (required).
+         */
+        public Builder model(ChatModel model) {
+            this.model = model;
+            return this;
+        }
+
+        /**
+         * Enable session memory for multi-turn conversations.
+         * <p>
+         * If null (default), each run() is independent with no history.
+         * If provided, conversation history is preserved across calls.
+         */
+        public Builder sessionMemory(ChatMemory sessionMemory) {
+            this.sessionMemory = sessionMemory;
+            return this;
+        }
+
+        /**
+         * Enable session memory with default in-memory implementation.
+         */
+        public Builder sessionMemory() {
+            this.sessionMemory = MessageWindowChatMemory.builder().build();
+            return this;
+        }
+
+        /**
+         * Enable interactive mode with AskUserQuestionTool.
+         * <p>
+         * When true and agentCallback is provided, the agent can ask
+         * the user questions during execution via onQuestion().
+         */
+        public Builder interactive(boolean interactive) {
+            this.interactive = interactive;
+            return this;
+        }
+
+        /**
+         * Set callback for agent events (TUI integration).
+         * <p>
+         * Required for interactive mode to handle questions.
+         */
+        public Builder agentCallback(AgentCallback agentCallback) {
+            this.agentCallback = agentCallback;
+            return this;
+        }
+
+        /**
+         * Set callback for tool call events.
+         */
+        public Builder toolCallListener(ToolCallListener toolCallListener) {
+            this.toolCallListener = toolCallListener;
+            return this;
+        }
+
+        /**
+         * Set conversation ID for session memory.
+         * <p>
+         * Defaults to "default" if not specified.
+         */
+        public Builder conversationId(String conversationId) {
+            this.conversationId = conversationId;
+            return this;
+        }
+
+        public MiniAgent build() {
+            if (config == null) {
+                throw new IllegalStateException("config is required");
+            }
+            if (model == null) {
+                throw new IllegalStateException("model is required");
+            }
+            if (interactive && agentCallback == null) {
+                log.warn("Interactive mode enabled but no agentCallback provided - questions will not be handled");
+            }
+            return new MiniAgent(this);
+        }
+    }
+
+    /**
+     * Bridges AgentLoopListener events to AgentCallback.
+     */
+    private static class CallbackLoopListener implements AgentLoopListener {
+        private final AgentCallback callback;
+
+        CallbackLoopListener(AgentCallback callback) {
+            this.callback = callback;
+        }
+
+        @Override
+        public void onLoopStarted(String runId, String userMessage) {
+            // AgentCallback doesn't have a direct equivalent
+        }
+
+        @Override
+        public void onTurnStarted(String runId, int turn) {
+            callback.onThinking();
+        }
+
+        @Override
+        public void onTurnCompleted(String runId, int turn, TerminationReason reason) {
+            // Handled in onLoopCompleted
+        }
+
+        @Override
+        public void onLoopCompleted(String runId, LoopState state, TerminationReason reason) {
+            callback.onComplete();
+        }
+
+        @Override
+        public void onLoopFailed(String runId, LoopState state, Throwable error) {
+            callback.onError(error);
+        }
     }
 
     /**

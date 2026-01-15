@@ -20,13 +20,16 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.springaicommunity.agents.harness.callback.AgentCallback;
 import org.springframework.ai.chat.model.ChatModel;
 
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 
 @DisplayName("MiniAgent")
 class MiniAgentTest {
@@ -168,6 +171,186 @@ class MiniAgentTest {
             assertThat(result.isFailure()).isFalse();
             assertThat(result.status()).isEqualTo("TURN_LIMIT_REACHED");
             assertThat(result.output()).isEqualTo("partial output");
+        }
+    }
+
+    @Nested
+    @DisplayName("Builder")
+    class BuilderTest {
+
+        @Test
+        @DisplayName("should build agent with builder pattern")
+        void shouldBuildAgentWithBuilder() {
+            ChatModel chatModel = createChatModel(List.of("response"));
+
+            MiniAgent agent = MiniAgent.builder()
+                    .config(config)
+                    .model(chatModel)
+                    .build();
+
+            assertThat(agent).isNotNull();
+            assertThat(agent.hasSessionMemory()).isFalse();
+            assertThat(agent.isInteractive()).isFalse();
+        }
+
+        @Test
+        @DisplayName("should build agent with session memory")
+        void shouldBuildAgentWithSessionMemory() {
+            ChatModel chatModel = createChatModel(List.of("response"));
+
+            MiniAgent agent = MiniAgent.builder()
+                    .config(config)
+                    .model(chatModel)
+                    .sessionMemory()
+                    .build();
+
+            assertThat(agent.hasSessionMemory()).isTrue();
+        }
+
+        @Test
+        @DisplayName("should build agent with interactive mode")
+        void shouldBuildAgentWithInteractiveMode() {
+            ChatModel chatModel = createChatModel(List.of("response"));
+
+            MiniAgent agent = MiniAgent.builder()
+                    .config(config)
+                    .model(chatModel)
+                    .interactive(true)
+                    .agentCallback(new AgentCallback() {})
+                    .build();
+
+            assertThat(agent.isInteractive()).isTrue();
+        }
+
+        @Test
+        @DisplayName("should build agent with conversation ID")
+        void shouldBuildAgentWithConversationId() {
+            ChatModel chatModel = createChatModel(List.of("response"));
+
+            MiniAgent agent = MiniAgent.builder()
+                    .config(config)
+                    .model(chatModel)
+                    .sessionMemory()
+                    .conversationId("test-conversation")
+                    .build();
+
+            assertThat(agent.hasSessionMemory()).isTrue();
+        }
+    }
+
+    @Nested
+    @DisplayName("Session memory")
+    class SessionMemoryTest {
+
+        @Test
+        @DisplayName("hasSessionMemory should return false when not configured")
+        void hasSessionMemoryShouldReturnFalseWhenNotConfigured() {
+            ChatModel chatModel = createChatModel(List.of("response"));
+
+            MiniAgent agent = MiniAgent.builder()
+                    .config(config)
+                    .model(chatModel)
+                    .build();
+
+            assertThat(agent.hasSessionMemory()).isFalse();
+        }
+
+        @Test
+        @DisplayName("hasSessionMemory should return true when configured")
+        void hasSessionMemoryShouldReturnTrueWhenConfigured() {
+            ChatModel chatModel = createChatModel(List.of("response"));
+
+            MiniAgent agent = MiniAgent.builder()
+                    .config(config)
+                    .model(chatModel)
+                    .sessionMemory()
+                    .build();
+
+            assertThat(agent.hasSessionMemory()).isTrue();
+        }
+
+        @Test
+        @DisplayName("clearSession should not throw when no memory configured")
+        void clearSessionShouldNotThrowWhenNoMemory() {
+            ChatModel chatModel = createChatModel(List.of("response"));
+
+            MiniAgent agent = MiniAgent.builder()
+                    .config(config)
+                    .model(chatModel)
+                    .build();
+
+            assertThatCode(agent::clearSession).doesNotThrowAnyException();
+        }
+
+        @Test
+        @DisplayName("clearSession should clear memory when configured")
+        void clearSessionShouldClearMemory() {
+            ChatModel chatModel = createChatModel(List.of("response"));
+
+            MiniAgent agent = MiniAgent.builder()
+                    .config(config)
+                    .model(chatModel)
+                    .sessionMemory()
+                    .build();
+
+            assertThatCode(agent::clearSession).doesNotThrowAnyException();
+        }
+    }
+
+    @Nested
+    @DisplayName("Interactive mode")
+    class InteractiveModeTest {
+
+        @Test
+        @DisplayName("isInteractive should return false when not configured")
+        void isInteractiveShouldReturnFalseWhenNotConfigured() {
+            ChatModel chatModel = createChatModel(List.of("response"));
+
+            MiniAgent agent = MiniAgent.builder()
+                    .config(config)
+                    .model(chatModel)
+                    .build();
+
+            assertThat(agent.isInteractive()).isFalse();
+        }
+
+        @Test
+        @DisplayName("isInteractive should return true when configured")
+        void isInteractiveShouldReturnTrueWhenConfigured() {
+            ChatModel chatModel = createChatModel(List.of("response"));
+
+            MiniAgent agent = MiniAgent.builder()
+                    .config(config)
+                    .model(chatModel)
+                    .interactive(true)
+                    .agentCallback(new AgentCallback() {})
+                    .build();
+
+            assertThat(agent.isInteractive()).isTrue();
+        }
+
+        @Test
+        @DisplayName("chat should invoke callback onThinking")
+        void chatShouldInvokeCallbackOnThinking() {
+            ChatModel chatModel = createChatModel(List.of("response"));
+            AtomicBoolean thinkingCalled = new AtomicBoolean(false);
+
+            AgentCallback callback = new AgentCallback() {
+                @Override
+                public void onThinking() {
+                    thinkingCalled.set(true);
+                }
+            };
+
+            MiniAgent agent = MiniAgent.builder()
+                    .config(config)
+                    .model(chatModel)
+                    .agentCallback(callback)
+                    .build();
+
+            agent.chat("hello", callback);
+
+            assertThat(thinkingCalled.get()).isTrue();
         }
     }
 }
