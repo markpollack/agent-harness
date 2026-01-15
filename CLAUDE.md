@@ -69,7 +69,8 @@ spring-ai-agent-harnesses/
 ├── harness-api/        # Core interfaces (AgentLoop, LoopState, LoopResult, TerminationStrategy)
 ├── harness-patterns/   # Loop implementations + composition strategies
 ├── harness-tools/      # Agent tools (Bash, Read, Write, Edit, Glob, Grep)
-├── harness-examples/   # MiniAgent example (~100 lines)
+├── harness-agents/     # Ready-to-use agents (MiniAgent)
+├── harness-examples/   # Example usage of harness-agents
 └── plans/              # Design documents, research, and reference implementations
 ```
 
@@ -156,8 +157,8 @@ Spring AI's `ToolCallAdvisor` handles the internal tool loop. What the taxonomy 
 - `harness-tools/.../tools/ReadTool.java`, `WriteTool.java`, `EditTool.java` - File operations
 - `harness-tools/.../tools/GlobTool.java`, `GrepTool.java` - Search operations
 
-### Example
-- `harness-examples/.../miniagent/MiniAgent.java` - 101-line SWE agent example
+### Agents
+- `harness-agents/.../mini/MiniAgent.java` - 101-line SWE agent example
 
 ## Plans Directory
 
