@@ -17,8 +17,8 @@ package org.springaicommunity.agents.harness.examples.miniagent;
 
 import io.micrometer.observation.ObservationRegistry;
 import org.springaicommunity.agents.harness.core.ToolCallListener;
-import org.springaicommunity.agents.harness.patterns.advisor.TurnLimitedToolCallAdvisor;
-import org.springaicommunity.agents.harness.patterns.advisor.TurnLimitExceededException;
+import org.springaicommunity.agents.harness.patterns.advisor.AgentLoopAdvisor;
+import org.springaicommunity.agents.harness.patterns.advisor.AgentLoopTerminatedException;
 import org.springaicommunity.agents.harness.patterns.observation.ToolCallObservationHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -69,11 +69,11 @@ public class MiniAgent {
         var registry = ObservationRegistry.create();
         registry.observationConfig().observationHandler(observationHandler);
 
-        // Create ChatClient with TurnLimitedToolCallAdvisor - enforces maxTurns!
+        // Create ChatClient with AgentLoopAdvisor - unified loop control
         var toolCallingManager = DefaultToolCallingManager.builder()
                 .observationRegistry(registry)
                 .build();
-        var toolCallAdvisor = TurnLimitedToolCallAdvisor.builder()
+        var toolCallAdvisor = AgentLoopAdvisor.builder()
                 .toolCallingManager(toolCallingManager)
                 .maxTurns(config.maxTurns())
                 .build();
@@ -102,11 +102,22 @@ public class MiniAgent {
 
             return new MiniAgentResult("COMPLETED", output, 1, toolCalls, tokens, tokens * 0.000006);
 
-        } catch (TurnLimitExceededException e) {
-            log.warn("MiniAgent turn limit reached: {}/{} turns", e.getActualTurns(), e.getMaxTurns());
+        } catch (AgentLoopTerminatedException e) {
+            var state = e.getState();
+            log.warn("MiniAgent terminated: {} at turn {}", e.getReason(), state != null ? state.currentTurn() : 0);
             int toolCalls = countingListener.getToolCallCount();
-            return new MiniAgentResult("TURN_LIMIT_REACHED", e.getPartialOutput(),
-                    e.getActualTurns(), toolCalls, 0, 0.0);
+            String status = switch (e.getReason()) {
+                case MAX_TURNS_REACHED -> "TURN_LIMIT_REACHED";
+                case TIMEOUT -> "TIMEOUT";
+                case COST_LIMIT_EXCEEDED -> "COST_LIMIT_EXCEEDED";
+                case STUCK_DETECTED -> "STUCK";
+                case EXTERNAL_SIGNAL -> "ABORTED";
+                default -> "TERMINATED";
+            };
+            return new MiniAgentResult(status, e.getPartialOutput(),
+                    state != null ? state.currentTurn() : 0, toolCalls,
+                    state != null ? state.totalTokensUsed() : 0,
+                    state != null ? state.estimatedCost() : 0.0);
         }
     }
 
