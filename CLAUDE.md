@@ -20,6 +20,10 @@ mvn test
 # Run integration tests (requires ANTHROPIC_API_KEY env var)
 mvn verify
 
+# Run tests with coverage report
+mvn clean test
+# HTML reports at: */target/site/jacoco/index.html
+
 # Build specific module
 mvn compile -pl harness-patterns
 
@@ -29,6 +33,32 @@ mvn test -pl harness-patterns -Dtest=TurnLimitedLoopTest
 # Run a single test method
 mvn test -pl harness-patterns -Dtest=TurnLimitedLoopTest#testMaxTurnsTermination
 ```
+
+## Code Coverage
+
+JaCoCo is configured for all modules. After `mvn test`, HTML reports are generated:
+
+```
+harness-api/target/site/jacoco/index.html
+harness-patterns/target/site/jacoco/index.html
+harness-tools/target/site/jacoco/index.html
+harness-examples/target/site/jacoco/index.html
+```
+
+**Coverage Targets:**
+
+| Module | Target |
+|--------|--------|
+| harness-api | 80% |
+| harness-patterns | 70% |
+| harness-tools | 80% |
+| harness-examples | 60% |
+
+**Testing Standards:**
+- Use AssertJ for assertions: `assertThat(result).isEqualTo(expected)`
+- BDD-style naming: `methodShouldExpectedBehaviorWhenCondition()`
+- AAA pattern: Arrange/Act/Assert
+- Don't test auto-generated methods (records, getters)
 
 ## Architecture
 
