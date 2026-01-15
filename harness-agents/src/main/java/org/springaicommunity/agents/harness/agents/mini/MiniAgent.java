@@ -188,10 +188,12 @@ public class MiniAgent {
      * @return Agent result
      */
     public MiniAgentResult chat(String message, AgentCallback callback) {
+        // Note: onThinking is called by CallbackLoopListener.onTurnStarted()
+        MiniAgentResult result = run(message);
         if (callback != null) {
-            callback.onThinking();
+            callback.onComplete();
         }
-        return run(message);
+        return result;
     }
 
     /**

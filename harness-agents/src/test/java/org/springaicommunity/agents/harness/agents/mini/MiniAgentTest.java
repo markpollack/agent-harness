@@ -25,6 +25,7 @@ import org.springframework.ai.chat.model.ChatModel;
 
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -351,6 +352,72 @@ class MiniAgentTest {
             agent.chat("hello", callback);
 
             assertThat(thinkingCalled.get()).isTrue();
+        }
+
+        @Test
+        @DisplayName("chat should invoke callback onComplete")
+        void chatShouldInvokeCallbackOnComplete() {
+            ChatModel chatModel = createChatModel(List.of("response"));
+            AtomicBoolean completeCalled = new AtomicBoolean(false);
+
+            AgentCallback callback = new AgentCallback() {
+                @Override
+                public void onComplete() {
+                    completeCalled.set(true);
+                }
+            };
+
+            MiniAgent agent = MiniAgent.builder()
+                    .config(config)
+                    .model(chatModel)
+                    .agentCallback(callback)
+                    .build();
+
+            agent.chat("hello", callback);
+
+            assertThat(completeCalled.get()).isTrue();
+        }
+
+        @Test
+        @DisplayName("chat should invoke onThinking before onComplete")
+        void chatShouldInvokeOnThinkingBeforeOnComplete() {
+            ChatModel chatModel = createChatModel(List.of("response"));
+            List<String> callOrder = new ArrayList<>();
+
+            AgentCallback callback = new AgentCallback() {
+                @Override
+                public void onThinking() {
+                    callOrder.add("thinking");
+                }
+
+                @Override
+                public void onComplete() {
+                    callOrder.add("complete");
+                }
+            };
+
+            MiniAgent agent = MiniAgent.builder()
+                    .config(config)
+                    .model(chatModel)
+                    .agentCallback(callback)
+                    .build();
+
+            agent.chat("hello", callback);
+
+            assertThat(callOrder).containsExactly("thinking", "complete");
+        }
+
+        @Test
+        @DisplayName("chat should not throw when callback is null")
+        void chatShouldNotThrowWhenCallbackIsNull() {
+            ChatModel chatModel = createChatModel(List.of("response"));
+
+            MiniAgent agent = MiniAgent.builder()
+                    .config(config)
+                    .model(chatModel)
+                    .build();
+
+            assertThatCode(() -> agent.chat("hello", null)).doesNotThrowAnyException();
         }
     }
 }
