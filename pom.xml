@@ -58,6 +58,8 @@
         <micrometer.version>1.14.2</micrometer.version>
         <spring-ai.version>2.0.0-SNAPSHOT</spring-ai.version>
         <spring-ai-agents.version>0.1.0-SNAPSHOT</spring-ai-agents.version>
+        <spring-ai-agent-utils.version>0.4.0-SNAPSHOT</spring-ai-agent-utils.version>
+        <jacoco.version>0.8.12</jacoco.version>
     </properties>
 
     <dependencyManagement>
@@ -101,6 +103,13 @@
                 <groupId>org.springaicommunity.agents</groupId>
                 <artifactId>spring-ai-agents-judge</artifactId>
                 <version>${spring-ai-agents.version}</version>
+            </dependency>
+
+            <!-- Spring AI Agent Utils (FileSystemTools, ShellTools, AskUserQuestionTool) -->
+            <dependency>
+                <groupId>org.springaicommunity</groupId>
+                <artifactId>spring-ai-agent-utils</artifactId>
+                <version>${spring-ai-agent-utils.version}</version>
             </dependency>
 
             <!-- Project Reactor for async/reactive -->
@@ -208,7 +217,7 @@
                     <artifactId>maven-surefire-plugin</artifactId>
                     <version>3.5.2</version>
                     <configuration>
-                        <argLine>--enable-preview</argLine>
+                        <argLine>@{argLine} --enable-preview</argLine>
                     </configuration>
                 </plugin>
                 <plugin>
@@ -222,7 +231,34 @@
                         </includes>
                     </configuration>
                 </plugin>
+                <plugin>
+                    <groupId>org.jacoco</groupId>
+                    <artifactId>jacoco-maven-plugin</artifactId>
+                    <version>${jacoco.version}</version>
+                    <executions>
+                        <execution>
+                            <id>prepare-agent</id>
+                            <goals>
+                                <goal>prepare-agent</goal>
+                            </goals>
+                        </execution>
+                        <execution>
+                            <id>report</id>
+                            <phase>test</phase>
+                            <goals>
+                                <goal>report</goal>
+                            </goals>
+                        </execution>
+                    </executions>
+                </plugin>
             </plugins>
         </pluginManagement>
+        <plugins>
+            <!-- Activate JaCoCo for all modules -->
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
     </build>
 </project>

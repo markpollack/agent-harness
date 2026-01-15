@@ -31,6 +31,12 @@
             <artifactId>spring-ai-agents-judge</artifactId>
         </dependency>
 
+        <!-- Spring AI Agent Utils (for AskUserQuestionTool.Question type) -->
+        <dependency>
+            <groupId>org.springaicommunity</groupId>
+            <artifactId>spring-ai-agent-utils</artifactId>
+        </dependency>
+
         <!-- Reactor for async -->
         <dependency>
             <groupId>io.projectreactor</groupId>
