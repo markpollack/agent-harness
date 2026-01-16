@@ -28,7 +28,7 @@ import org.springaicommunity.agent.tools.AskUserQuestionTool;
 import org.springaicommunity.agent.tools.FileSystemTools;
 import org.springaicommunity.agent.tools.GlobTool;
 import org.springaicommunity.agent.tools.GrepTool;
-import org.springaicommunity.agent.tools.ShellTools;
+import org.springaicommunity.agents.harness.tools.BashTool;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
@@ -80,12 +80,11 @@ public class MiniAgent {
         this.interactive = builder.interactive;
         this.conversationId = builder.conversationId != null ? builder.conversationId : "default";
 
-        // Create tools from spring-ai-agent-utils
-        // These tools have proper descriptions that guide the LLM to use specialized tools
-        // (Read, Write, Edit) instead of bash for file operations
+        // Create tools - mix of spring-ai-agent-utils and harness-tools
+        // Use harness-tools BashTool instead of ShellTools to avoid overly verbose tool descriptions
         List<Object> toolObjects = new ArrayList<>();
         toolObjects.add(FileSystemTools.builder().build());
-        toolObjects.add(ShellTools.builder().build());
+        toolObjects.add(new BashTool(config.workingDirectory(), config.commandTimeout()));
         toolObjects.add(GlobTool.builder().build());
         toolObjects.add(GrepTool.builder().build());
         toolObjects.add(new SubmitTool());
