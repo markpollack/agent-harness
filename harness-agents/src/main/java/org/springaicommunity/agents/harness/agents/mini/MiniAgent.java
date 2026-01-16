@@ -25,6 +25,10 @@ import org.springaicommunity.agents.harness.patterns.observation.ToolCallObserva
 import org.springaicommunity.agents.harness.core.LoopState;
 import org.springaicommunity.agents.harness.core.TerminationReason;
 import org.springaicommunity.agent.tools.AskUserQuestionTool;
+import org.springaicommunity.agent.tools.FileSystemTools;
+import org.springaicommunity.agent.tools.GlobTool;
+import org.springaicommunity.agent.tools.GrepTool;
+import org.springaicommunity.agent.tools.ShellTools;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
@@ -63,7 +67,7 @@ public class MiniAgent {
 
     private final MiniAgentConfig config;
     private final ChatClient chatClient;
-    private final List<ToolCallback> tools;
+    private final List<Object> tools;
     private final ToolCallObservationHandler observationHandler;
     private final CountingToolCallListener countingListener;
     private final ChatMemory sessionMemory;
@@ -76,18 +80,23 @@ public class MiniAgent {
         this.interactive = builder.interactive;
         this.conversationId = builder.conversationId != null ? builder.conversationId : "default";
 
-        // Create tools
-        var toolsObj = new MiniAgentTools(config.workingDirectory(), config.commandTimeout());
-        List<ToolCallback> toolList = new ArrayList<>(Arrays.asList(ToolCallbacks.from(toolsObj)));
+        // Create tools from spring-ai-agent-utils
+        // These tools have proper descriptions that guide the LLM to use specialized tools
+        // (Read, Write, Edit) instead of bash for file operations
+        List<Object> toolObjects = new ArrayList<>();
+        toolObjects.add(FileSystemTools.builder().build());
+        toolObjects.add(ShellTools.builder().build());
+        toolObjects.add(GlobTool.builder().build());
+        toolObjects.add(GrepTool.builder().build());
+        toolObjects.add(new SubmitTool());
 
         // Add AskUserQuestionTool if interactive mode and callback provided
         if (interactive && builder.agentCallback != null) {
-            var askUserTool = AskUserQuestionTool.builder()
+            toolObjects.add(AskUserQuestionTool.builder()
                     .questionHandler(questions -> builder.agentCallback.onQuestion(questions))
-                    .build();
-            toolList.addAll(Arrays.asList(ToolCallbacks.from(askUserTool)));
+                    .build());
         }
-        this.tools = toolList;
+        this.tools = toolObjects;
 
         // Wrap listener in counting listener for toolCallsExecuted tracking
         ToolCallListener baseListener = builder.toolCallListener != null
@@ -117,8 +126,12 @@ public class MiniAgent {
         var toolCallAdvisor = advisorBuilder.build();
 
         // Build ChatClient with optional memory advisor
+        // Note: defaultToolContext is required for tools that use ToolContext (e.g., FileSystemTools)
+        // Tools must be registered via defaultTools() (not defaultToolCallbacks()) for toolContext to work
         var chatClientBuilder = ChatClient.builder(builder.model)
-                .defaultAdvisors(toolCallAdvisor);
+                .defaultAdvisors(toolCallAdvisor)
+                .defaultTools(tools.toArray())
+                .defaultToolContext(Map.of("agentId", "mini-agent"));
 
         if (sessionMemory != null) {
             var memoryAdvisor = MessageChatMemoryAdvisor.builder(sessionMemory)
@@ -142,10 +155,13 @@ public class MiniAgent {
         observationHandler.setContext("mini-agent", 1);
 
         try {
+            // Include working directory in system prompt so LLM uses correct paths
+            String systemPromptWithWorkdir = config.systemPrompt() +
+                    "\n\nYour working directory is: " + config.workingDirectory().toAbsolutePath();
+
             ChatResponse response = chatClient.prompt()
-                    .system(config.systemPrompt())
+                    .system(systemPromptWithWorkdir)
                     .user(task)
-                    .toolCallbacks(tools)
                     .call()
                     .chatResponse();
 
@@ -416,5 +432,28 @@ public class MiniAgent {
         public boolean isSuccess() { return "COMPLETED".equals(status); }
         public boolean isFailure() { return "FAILED".equals(status); }
         public boolean isTurnLimitReached() { return "TURN_LIMIT_REACHED".equals(status); }
+    }
+
+    /**
+     * Tool for submitting the final answer and completing the task.
+     * <p>
+     * Using returnDirect=true means the result is returned directly to the user
+     * without going back to the model, effectively terminating the agent loop.
+     */
+    private static class SubmitTool {
+
+        private static final Logger log = LoggerFactory.getLogger(SubmitTool.class);
+
+        @org.springframework.ai.tool.annotation.Tool(
+            name = "Submit",
+            description = "Submit your final answer when the task is complete. This ends the conversation.",
+            returnDirect = true)
+        public String submit(
+                @org.springframework.ai.tool.annotation.ToolParam(
+                    description = "The final answer or result of the task") String answer) {
+            log.info("Task submitted with answer: {}", answer != null && answer.length() > 100
+                    ? answer.substring(0, 100) + "..." : answer);
+            return answer;
+        }
     }
 }

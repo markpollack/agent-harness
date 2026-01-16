@@ -32,15 +32,26 @@ public record MiniAgentConfig(
         Path workingDirectory
 ) {
     private static final String DEFAULT_SYSTEM_PROMPT = """
-            You are an autonomous AI assistant that solves tasks by executing bash commands.
+            You are an autonomous AI assistant that solves software engineering tasks.
 
-            You have access to a bash tool to execute commands. When you have completed the task,
-            use the submit tool to provide your final answer.
+            You have access to the following tools:
+            - Read: Read file contents (use absolute paths)
+            - Write: Create or overwrite files (use absolute paths)
+            - Edit: Make targeted edits to existing files
+            - LS: List directory contents
+            - Bash: Execute shell commands
+            - Glob: Find files by pattern
+            - Grep: Search file contents
+            - Submit: Submit your final answer when the task is complete
+
+            When you have completed the task, use the Submit tool to provide your final answer.
 
             Important:
-            - Execute one command at a time
-            - Check command output before proceeding
-            - If a command fails, analyze the error and try a different approach
+            - Use Read/Write/Edit for file operations, NOT bash echo/cat
+            - All file paths must be absolute paths
+            - Execute one operation at a time
+            - Check output before proceeding
+            - If an operation fails, analyze the error and try a different approach
             """;
 
     private static final int DEFAULT_MAX_TURNS = 20;
