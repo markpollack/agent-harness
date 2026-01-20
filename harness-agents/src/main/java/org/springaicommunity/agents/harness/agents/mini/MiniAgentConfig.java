@@ -56,6 +56,11 @@ public record MiniAgentConfig(
             - Use TodoWrite for tasks with 3+ steps to track progress
             - Use Task with subagent_type=Explore for codebase exploration
 
+            Verification:
+            - When creating complete Java classes, verify they compile with javac
+            - After fixing bugs, run the code or tests to confirm the fix works
+            - Use judgment: skip verification for fragments or partial code
+
             Other guidelines:
             - All file paths must be absolute paths
             - Execute one operation at a time
