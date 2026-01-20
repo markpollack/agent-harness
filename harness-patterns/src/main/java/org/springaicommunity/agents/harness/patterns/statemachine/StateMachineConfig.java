@@ -15,7 +15,7 @@
  */
 package org.springaicommunity.agents.harness.patterns.statemachine;
 
-import org.springaicommunity.agents.judge.jury.Jury;
+import org.springaicommunity.judge.jury.Jury;
 
 import java.nio.file.Path;
 import java.time.Duration;

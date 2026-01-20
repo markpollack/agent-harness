@@ -18,11 +18,11 @@ package org.springaicommunity.agents.harness.patterns.judge;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springaicommunity.agents.harness.core.LoopState;
-import org.springaicommunity.agents.judge.context.AgentExecutionStatus;
-import org.springaicommunity.agents.judge.context.JudgmentContext;
-import org.springaicommunity.agents.judge.jury.Jury;
-import org.springaicommunity.agents.judge.jury.Verdict;
-import org.springaicommunity.agents.judge.score.Scores;
+import org.springaicommunity.judge.context.ExecutionStatus;
+import org.springaicommunity.judge.context.JudgmentContext;
+import org.springaicommunity.judge.jury.Jury;
+import org.springaicommunity.judge.jury.Verdict;
+import org.springaicommunity.judge.score.Scores;
 import org.springframework.ai.chat.model.ChatResponse;
 
 import java.nio.file.Path;
@@ -138,7 +138,7 @@ public class SpringAiJuryAdapter {
                 .workspace(workingDirectory)
                 .executionTime(state.elapsed())
                 .startedAt(state.startedAt())
-                .status(state.abortSignalled() ? AgentExecutionStatus.CANCELLED : AgentExecutionStatus.SUCCESS);
+                .status(state.abortSignalled() ? ExecutionStatus.CANCELLED : ExecutionStatus.SUCCESS);
 
         agentOutput.ifPresent(builder::agentOutput);
 

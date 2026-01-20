@@ -17,8 +17,8 @@ package org.springaicommunity.agents.harness.patterns.advisor;
 
 import org.springaicommunity.agents.harness.core.LoopState;
 import org.springaicommunity.agents.harness.core.TerminationReason;
-import org.springaicommunity.agents.judge.jury.Verdict;
-import org.springaicommunity.agents.judge.score.Scores;
+import org.springaicommunity.judge.jury.Verdict;
+import org.springaicommunity.judge.score.Scores;
 import org.springframework.ai.chat.client.ChatClientResponse;
 
 import java.util.Map;

@@ -82,11 +82,16 @@ public class MiniAgent {
 
         // Create tools - mix of spring-ai-agent-utils and harness-tools
         // Use harness-tools BashTool instead of ShellTools to avoid overly verbose tool descriptions
+        // Pass workingDirectory to tools that support it so they operate within the sandbox context
         List<Object> toolObjects = new ArrayList<>();
         toolObjects.add(FileSystemTools.builder().build());
         toolObjects.add(new BashTool(config.workingDirectory(), config.commandTimeout()));
-        toolObjects.add(GlobTool.builder().build());
-        toolObjects.add(GrepTool.builder().build());
+        toolObjects.add(GlobTool.builder()
+                .workingDirectory(config.workingDirectory())
+                .build());
+        toolObjects.add(GrepTool.builder()
+                .workingDirectory(config.workingDirectory())
+                .build());
         toolObjects.add(new SubmitTool());
 
         // Add AskUserQuestionTool if interactive mode and callback provided

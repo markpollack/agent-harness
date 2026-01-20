@@ -18,9 +18,9 @@ package org.springaicommunity.agents.harness.patterns.judge;
 import org.springaicommunity.agents.harness.core.TerminationReason;
 import org.springaicommunity.agents.harness.core.LoopState;
 import org.springaicommunity.agents.harness.strategy.TerminationStrategy;
-import org.springaicommunity.agents.judge.jury.Jury;
-import org.springaicommunity.agents.judge.jury.Verdict;
-import org.springaicommunity.agents.judge.score.Scores;
+import org.springaicommunity.judge.jury.Jury;
+import org.springaicommunity.judge.jury.Verdict;
+import org.springaicommunity.judge.score.Scores;
 
 import java.nio.file.Path;
 import java.util.Map;
