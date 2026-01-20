@@ -55,7 +55,11 @@ public class BashTool {
     /**
      * Executes a bash command.
      */
-    @Tool(description = "Execute a bash command for terminal operations like git, npm, docker, make. Avoid using for file read/write/search - use dedicated Read, Write, Glob, Grep tools instead.")
+    @Tool(description = """
+            Execute a bash command for terminal operations like git, npm, docker, make.
+            DO NOT use for file operations - use specialized tools instead.
+            Avoid: find, ls (use Glob), grep, rg (use Grep), cat, head, tail (use Read), sed, awk (use Edit).
+            """)
     public String bash(
             @ToolParam(description = "The command to execute") String command,
             @ToolParam(description = "Timeout in seconds (max 600)", required = false) Integer timeoutSeconds) {

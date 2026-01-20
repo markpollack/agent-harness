@@ -29,6 +29,9 @@ import org.springaicommunity.agent.tools.FileSystemTools;
 import org.springaicommunity.agent.tools.GlobTool;
 import org.springaicommunity.agent.tools.GrepTool;
 import org.springaicommunity.agent.tools.TodoWriteTool;
+import org.springaicommunity.agent.tools.task.TaskTool;
+import org.springaicommunity.agent.tools.task.repository.DefaultTaskRepository;
+import org.springaicommunity.agent.tools.task.subagent.claude.ClaudeSubagentExecutor;
 import org.springaicommunity.agents.harness.tools.BashTool;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -95,6 +98,17 @@ public class MiniAgent {
                 .build());
         toolObjects.add(new SubmitTool());
         toolObjects.add(TodoWriteTool.builder().build());
+
+        // Add TaskTool for sub-agent delegation
+        var taskRepository = new DefaultTaskRepository();
+        var subagentExecutor = new ClaudeSubagentExecutor(
+                Map.of("default", ChatClient.builder(builder.model)),
+                List.of() // Sub-agents will have access to same tools via their own config
+        );
+        toolObjects.add(TaskTool.builder()
+                .taskRepository(taskRepository)
+                .subagentExecutors(subagentExecutor)
+                .build());
 
         // Add AskUserQuestionTool if interactive mode and callback provided
         if (interactive && builder.agentCallback != null) {

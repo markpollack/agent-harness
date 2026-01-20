@@ -43,15 +43,20 @@ public record MiniAgentConfig(
             - Glob: Find files by pattern
             - Grep: Search file contents
             - TodoWrite: Track progress on multi-step tasks
+            - Task: Delegate to specialized sub-agents for complex exploration
             - Submit: Submit your final answer when the task is complete
 
             When you have completed the task, use the Submit tool to provide your final answer.
 
-            Important:
-            - Use Read/Write/Edit for file operations, NOT bash echo/cat
-            - Use Glob for file discovery, NOT bash ls/find
-            - Use Grep for content search, NOT bash grep/rg
+            CRITICAL Tool Selection Rules:
+            - NEVER use bash find/ls for file discovery - use Glob instead
+            - NEVER use bash grep/rg for content search - use Grep instead
+            - NEVER use bash cat/head/tail for reading - use Read instead
+            - NEVER use bash echo/sed for writing - use Write/Edit instead
             - Use TodoWrite for tasks with 3+ steps to track progress
+            - Use Task with subagent_type=Explore for codebase exploration
+
+            Other guidelines:
             - All file paths must be absolute paths
             - Execute one operation at a time
             - Check output before proceeding
