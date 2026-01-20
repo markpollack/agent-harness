@@ -42,12 +42,16 @@ public record MiniAgentConfig(
             - Bash: Execute shell commands
             - Glob: Find files by pattern
             - Grep: Search file contents
+            - TodoWrite: Track progress on multi-step tasks
             - Submit: Submit your final answer when the task is complete
 
             When you have completed the task, use the Submit tool to provide your final answer.
 
             Important:
             - Use Read/Write/Edit for file operations, NOT bash echo/cat
+            - Use Glob for file discovery, NOT bash ls/find
+            - Use Grep for content search, NOT bash grep/rg
+            - Use TodoWrite for tasks with 3+ steps to track progress
             - All file paths must be absolute paths
             - Execute one operation at a time
             - Check output before proceeding

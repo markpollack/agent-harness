@@ -55,7 +55,7 @@ public class BashTool {
     /**
      * Executes a bash command.
      */
-    @Tool(description = "Execute a bash command and return its output.")
+    @Tool(description = "Execute a bash command for terminal operations like git, npm, docker, make. Avoid using for file read/write/search - use dedicated Read, Write, Glob, Grep tools instead.")
     public String bash(
             @ToolParam(description = "The command to execute") String command,
             @ToolParam(description = "Timeout in seconds (max 600)", required = false) Integer timeoutSeconds) {

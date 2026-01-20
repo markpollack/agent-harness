@@ -28,6 +28,7 @@ import org.springaicommunity.agent.tools.AskUserQuestionTool;
 import org.springaicommunity.agent.tools.FileSystemTools;
 import org.springaicommunity.agent.tools.GlobTool;
 import org.springaicommunity.agent.tools.GrepTool;
+import org.springaicommunity.agent.tools.TodoWriteTool;
 import org.springaicommunity.agents.harness.tools.BashTool;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -93,6 +94,7 @@ public class MiniAgent {
                 .workingDirectory(config.workingDirectory())
                 .build());
         toolObjects.add(new SubmitTool());
+        toolObjects.add(TodoWriteTool.builder().build());
 
         // Add AskUserQuestionTool if interactive mode and callback provided
         if (interactive && builder.agentCallback != null) {
