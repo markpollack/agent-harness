@@ -71,7 +71,7 @@ public class MiniAgent {
 
     private final MiniAgentConfig config;
     private final ChatClient chatClient;
-    private final List<Object> tools;
+    private final List<ToolCallback> tools;
     private final ToolCallObservationHandler observationHandler;
     private final CountingToolCallListener countingListener;
     private final ChatMemory sessionMemory;
@@ -87,36 +87,46 @@ public class MiniAgent {
         // Create tools - mix of spring-ai-agent-utils and harness-tools
         // Use harness-tools BashTool instead of ShellTools to avoid overly verbose tool descriptions
         // Pass workingDirectory to tools that support it so they operate within the sandbox context
-        List<Object> toolObjects = new ArrayList<>();
-        toolObjects.add(FileSystemTools.builder().build());
-        toolObjects.add(new BashTool(config.workingDirectory(), config.commandTimeout()));
-        toolObjects.add(GlobTool.builder()
-                .workingDirectory(config.workingDirectory())
-                .build());
-        toolObjects.add(GrepTool.builder()
-                .workingDirectory(config.workingDirectory())
-                .build());
-        toolObjects.add(new SubmitTool());
-        toolObjects.add(TodoWriteTool.builder().build());
 
-        // Add TaskTool for sub-agent delegation
+        // Tools with @Tool annotated methods - convert via ToolCallbacks.from()
+        List<Object> annotatedToolObjects = new ArrayList<>();
+        annotatedToolObjects.add(FileSystemTools.builder().build());
+        annotatedToolObjects.add(new BashTool(config.workingDirectory(), config.commandTimeout()));
+        annotatedToolObjects.add(GlobTool.builder()
+                .workingDirectory(config.workingDirectory())
+                .build());
+        annotatedToolObjects.add(GrepTool.builder()
+                .workingDirectory(config.workingDirectory())
+                .build());
+        annotatedToolObjects.add(new SubmitTool());
+        annotatedToolObjects.add(TodoWriteTool.builder().build());
+
+        // Add AskUserQuestionTool if interactive mode and callback provided
+        if (interactive && builder.agentCallback != null) {
+            annotatedToolObjects.add(AskUserQuestionTool.builder()
+                    .questionHandler(questions -> builder.agentCallback.onQuestion(questions))
+                    .build());
+        }
+
+        // Tools that directly implement ToolCallback - add directly to callback list
+        List<ToolCallback> directCallbacks = new ArrayList<>();
+
+        // Add TaskTool for sub-agent delegation (returns ToolCallback directly)
         var taskRepository = new DefaultTaskRepository();
         var subagentExecutor = new ClaudeSubagentExecutor(
                 Map.of("default", ChatClient.builder(builder.model)),
                 List.of() // Sub-agents will have access to same tools via their own config
         );
-        toolObjects.add(TaskTool.builder()
+        directCallbacks.add(TaskTool.builder()
                 .taskRepository(taskRepository)
                 .subagentExecutors(subagentExecutor)
                 .build());
 
-        // Add AskUserQuestionTool if interactive mode and callback provided
-        if (interactive && builder.agentCallback != null) {
-            toolObjects.add(AskUserQuestionTool.builder()
-                    .questionHandler(questions -> builder.agentCallback.onQuestion(questions))
-                    .build());
-        }
-        this.tools = toolObjects;
+        // Convert @Tool annotated objects to ToolCallbacks and merge with direct callbacks
+        var annotatedCallbacks = ToolCallbacks.from(annotatedToolObjects.toArray());
+        var allCallbacks = new ArrayList<>(Arrays.asList(annotatedCallbacks));
+        allCallbacks.addAll(directCallbacks);
+        this.tools = List.copyOf(allCallbacks);
 
         // Wrap listener in counting listener for toolCallsExecuted tracking
         ToolCallListener baseListener = builder.toolCallListener != null
@@ -147,10 +157,10 @@ public class MiniAgent {
 
         // Build ChatClient with optional memory advisor
         // Note: defaultToolContext is required for tools that use ToolContext (e.g., FileSystemTools)
-        // Tools must be registered via defaultTools() (not defaultToolCallbacks()) for toolContext to work
+        // tools list already contains ToolCallback instances
         var chatClientBuilder = ChatClient.builder(builder.model)
                 .defaultAdvisors(toolCallAdvisor)
-                .defaultTools(tools.toArray())
+                .defaultToolCallbacks(tools.toArray(new ToolCallback[0]))
                 .defaultToolContext(Map.of("agentId", "mini-agent"));
 
         if (sessionMemory != null) {

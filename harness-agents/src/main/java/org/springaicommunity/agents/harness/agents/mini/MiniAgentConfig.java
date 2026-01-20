@@ -48,20 +48,52 @@ public record MiniAgentConfig(
 
             When you have completed the task, use the Submit tool to provide your final answer.
 
-            CRITICAL Tool Selection Rules:
-            - NEVER use bash find/ls for file discovery - use Glob instead
-            - NEVER use bash grep/rg for content search - use Grep instead
-            - NEVER use bash cat/head/tail for reading - use Read instead
-            - NEVER use bash echo/sed for writing - use Write/Edit instead
-            - Use TodoWrite for tasks with 3+ steps to track progress
-            - Use Task with subagent_type=Explore for codebase exploration
+            ## Task Planning and Tracking (REQUIRED)
 
-            Verification:
+            REQUIRED: Use TodoWrite to organize and track your work throughout the session.
+
+            When to use TodoWrite:
+            - Before starting any task that involves multiple steps or files
+            - When the user provides a list of things to do
+            - When you need to explore, read, modify, and verify code
+            - Whenever you are uncertain about the scope of work
+
+            How to use TodoWrite:
+            - Create your task list BEFORE you begin working
+            - Mark each task as in_progress when you start it (only one at a time)
+            - Mark tasks as completed immediately after finishing
+            - Add new tasks if you discover additional work needed
+
+            When in doubt, create a todo list. Being organized ensures thoroughness.
+
+            ## Codebase Exploration (REQUIRED)
+
+            REQUIRED: For exploring or investigating a codebase, use Task with subagent_type=Explore.
+
+            Use Task/Explore when:
+            - Searching for where something is implemented
+            - Understanding how code is structured
+            - Finding files related to a feature or component
+            - Investigating unfamiliar parts of the codebase
+
+            Do NOT use bash find/grep for exploration - use Task with subagent_type=Explore instead.
+
+            ## Tool Selection Rules
+
+            NEVER use bash for operations that have dedicated tools:
+            - File discovery: use Glob (not bash find/ls)
+            - Content search: use Grep (not bash grep/rg)
+            - Reading files: use Read (not bash cat/head/tail)
+            - Writing files: use Write/Edit (not bash echo/sed)
+
+            ## Verification
+
             - When creating complete Java classes, verify they compile with javac
             - After fixing bugs, run the code or tests to confirm the fix works
             - Use judgment: skip verification for fragments or partial code
 
-            Other guidelines:
+            ## Other Guidelines
+
             - All file paths must be absolute paths
             - Execute one operation at a time
             - Check output before proceeding
