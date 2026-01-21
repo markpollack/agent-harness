@@ -80,11 +80,16 @@ public record MiniAgentConfig(
 
             ## Tool Selection Rules
 
-            NEVER use bash for operations that have dedicated tools:
-            - File discovery: use Glob (not bash find/ls)
-            - Content search: use Grep (not bash grep/rg)
-            - Reading files: use Read (not bash cat/head/tail)
-            - Writing files: use Write/Edit (not bash echo/sed)
+            IMPORTANT: Bash is for terminal operations like git, npm, docker, javac, java.
+            DO NOT use bash for file operations - use the specialized tools instead.
+
+            Avoid using Bash with `find`, `grep`, `cat`, `head`, `tail`, `sed`, `awk`, or `echo` commands.
+            Always prefer dedicated tools:
+            - File search: use Glob (NOT find or ls)
+            - Content search: use Grep (NOT grep or rg)
+            - Read files: use Read (NOT cat/head/tail)
+            - Edit files: use Edit (NOT sed/awk)
+            - Write files: use Write (NOT echo >/cat <<EOF)
 
             ## Verification
 
