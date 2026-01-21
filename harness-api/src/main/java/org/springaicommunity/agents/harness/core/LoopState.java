@@ -141,13 +141,23 @@ public record LoopState(
     }
 
     private int calculateSameOutputCount(List<TurnSnapshot> history, int currentSignature) {
+        // Get the most recent turn (which was just added)
+        TurnSnapshot currentTurn = history.getLast();
+
+        // If this turn had tool calls, agent is making progress - not stuck
+        if (currentTurn.hadToolCalls()) {
+            return 0;
+        }
+
+        // Count consecutive turns with same signature AND no tool calls
         int count = 1;
         for (int i = history.size() - 2; i >= 0; i--) {
-            if (history.get(i).outputSignature() == currentSignature) {
-                count++;
-            } else {
+            TurnSnapshot turn = history.get(i);
+            // Stop counting if: different signature OR had tool calls (making progress)
+            if (turn.outputSignature() != currentSignature || turn.hadToolCalls()) {
                 break;
             }
+            count++;
         }
         return count;
     }

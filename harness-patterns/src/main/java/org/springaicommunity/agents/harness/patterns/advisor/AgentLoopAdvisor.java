@@ -373,11 +373,10 @@ public class AgentLoopAdvisor extends ToolCallAdvisor {
         if (response == null || response.chatResponse() == null) {
             return false;
         }
-        var result = response.chatResponse().getResult();
-        if (result == null || result.getOutput() == null) {
-            return false;
-        }
-        return result.getOutput().hasToolCalls();
+        // Use ChatResponse.hasToolCalls() which checks ALL generations,
+        // not just the first one. Anthropic returns TEXT and TOOL_USE as
+        // separate content blocks, creating multiple generations.
+        return response.chatResponse().hasToolCalls();
     }
 
     // --- Listener notifications ---
