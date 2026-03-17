@@ -20,20 +20,49 @@ import io.github.markpollack.harness.flows.Step;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 
 /**
  * The runtime layer that executes a {@link WorkflowGraph}.
  * <p>
- * Dispatches each step, follows edges based on conditions, and enforces
- * {@link RunOptions} constraints. In Stage 1 this is a minimal local executor;
- * {@code TraceRecorder} and {@code PartitionHandler} are added in Steps 1.4/1.5.
+ * Dispatches each step, follows edges based on conditions, enforces
+ * {@link RunOptions} constraints, and records every transition via
+ * {@link TraceRecorder}.
  */
 public class WorkflowExecutor {
 
     private static final Logger logger = LoggerFactory.getLogger(WorkflowExecutor.class);
 
     private static final int DEFAULT_MAX_ITERATIONS = 1000;
+
+    private final TraceRecorder traceRecorder;
+
+    /**
+     * Creates an executor with a TraceRecorder.
+     *
+     * @param traceRecorder the recorder for step transitions
+     */
+    public WorkflowExecutor(TraceRecorder traceRecorder) {
+        this.traceRecorder = traceRecorder != null ? traceRecorder : TraceRecorder.noop();
+    }
+
+    /**
+     * Creates an executor with no-op tracing (zero overhead).
+     */
+    public WorkflowExecutor() {
+        this(TraceRecorder.noop());
+    }
+
+    /**
+     * Returns the trace recorder used by this executor.
+     *
+     * @return the trace recorder
+     */
+    public TraceRecorder traceRecorder() {
+        return traceRecorder;
+    }
 
     /**
      * Executes a workflow graph with the given context and input.
@@ -52,9 +81,11 @@ public class WorkflowExecutor {
                 ? options.maxIterations()
                 : DEFAULT_MAX_ITERATIONS;
 
+        String runId = ctx.runId();
         String currentNodeName = graph.startNode();
         Object currentInput = input;
         int iterations = 0;
+        String previousNodeName = null;
 
         logger.debug("Starting workflow '{}' at node '{}'", graph.name(), currentNodeName);
 
@@ -71,27 +102,38 @@ public class WorkflowExecutor {
 
             logger.debug("Executing node '{}' (iteration {})", node.name(), iterations);
 
-            // Execute the step
+            // Execute the step and record the transition
+            Instant stepStart = Instant.now();
             Object output;
             try {
                 Step step = node.step();
                 output = step.execute(ctx, currentInput);
             } catch (WorkflowTerminatedException e) {
+                Duration stepDuration = Duration.between(stepStart, Instant.now());
+                recordTransition(runId, graph.name(), previousNodeName, node.name(),
+                        stepDuration, 0L, 0.0, node.type());
                 logger.info("Workflow '{}' terminated at node '{}': {} - {}",
                         graph.name(), node.name(), e.status(), e.getMessage());
-                return null; // terminated workflows return null
+                return null;
             } catch (Exception e) {
-                // Check for error edges from this node
+                Duration stepDuration = Duration.between(stepStart, Instant.now());
+                recordTransition(runId, graph.name(), previousNodeName, node.name(),
+                        stepDuration, 0L, 0.0, node.type());
+
                 WorkflowEdge errorEdge = findErrorEdge(graph, currentNodeName, e);
                 if (errorEdge != null) {
                     logger.debug("Error in node '{}', routing via error edge to '{}'",
                             currentNodeName, errorEdge.to());
+                    previousNodeName = currentNodeName;
                     currentNodeName = errorEdge.to();
-                    currentInput = currentInput; // keep existing input for recovery step
                     continue;
                 }
-                throw e; // no matching error edge — propagate
+                throw e;
             }
+
+            Duration stepDuration = Duration.between(stepStart, Instant.now());
+            recordTransition(runId, graph.name(), previousNodeName, node.name(),
+                    stepDuration, 0L, 0.0, node.type());
 
             // Check if we're at the finish node
             if (currentNodeName.equals(graph.finishNode())) {
@@ -115,11 +157,11 @@ public class WorkflowExecutor {
                                 + "': no matching outgoing edge");
             }
 
-            // Apply transform if present
             currentInput = nextEdge.transform() != null
                     ? nextEdge.transform().apply(output)
                     : output;
 
+            previousNodeName = currentNodeName;
             currentNodeName = nextEdge.to();
         }
     }
@@ -131,10 +173,15 @@ public class WorkflowExecutor {
         return execute(graph, ctx, input, null);
     }
 
-    /**
-     * Finds an error edge that matches the thrown exception.
-     * Error edges have labels starting with "error:" followed by the exception class name.
-     */
+    private void recordTransition(String runId, String workflowName, String fromStep,
+                                   String toStep, Duration duration, long tokens, double cost,
+                                   io.github.markpollack.harness.patterns.graph.NodeType nodeType) {
+        traceRecorder.record(new StepTransition(
+                runId, workflowName, fromStep, toStep,
+                Instant.now(), duration, tokens, cost, nodeType
+        ));
+    }
+
     private WorkflowEdge findErrorEdge(WorkflowGraph<?, ?> graph, String nodeName, Exception e) {
         List<WorkflowEdge> edges = graph.edgesFrom(nodeName);
         for (WorkflowEdge edge : edges) {
