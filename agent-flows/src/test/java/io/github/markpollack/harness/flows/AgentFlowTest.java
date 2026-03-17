@@ -15,7 +15,7 @@
  */
 package io.github.markpollack.harness.flows;
 
-import io.github.markpollack.harness.flows.steps.Step;
+import io.github.markpollack.harness.flows.steps.Steps;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -37,8 +37,8 @@ class AgentFlowTest {
 
     @Test
     void sequentialShouldExecuteSingleStep() {
-        AgentStep<String, String> upper = Step.of((AgentContext c, String input) -> input.toUpperCase());
-        AgentStep<String, String> flow = AgentFlow.sequential(upper);
+        Step<String, String> upper = Steps.of((AgentContext c, String input) -> input.toUpperCase());
+        Step<String, String> flow = AgentFlow.sequential(upper);
 
         assertThat(flow.execute(ctx, "hello")).isEqualTo("HELLO");
     }
@@ -47,20 +47,20 @@ class AgentFlowTest {
     void sequentialShouldPassOutputOfEachStepAsInputToNext() {
         List<String> capturedInputs = new ArrayList<>();
 
-        AgentStep<String, String> stepA = Step.of((AgentContext c, String input) -> {
+        Step<String, String> stepA = Steps.of((AgentContext c, String input) -> {
             capturedInputs.add(input);
             return input + "-A";
         });
-        AgentStep<String, String> stepB = Step.of((AgentContext c, String input) -> {
+        Step<String, String> stepB = Steps.of((AgentContext c, String input) -> {
             capturedInputs.add(input);
             return input + "-B";
         });
-        AgentStep<String, String> stepC = Step.of((AgentContext c, String input) -> {
+        Step<String, String> stepC = Steps.of((AgentContext c, String input) -> {
             capturedInputs.add(input);
             return input + "-C";
         });
 
-        AgentStep<String, String> flow = AgentFlow.sequential(stepA, stepB, stepC);
+        Step<String, String> flow = AgentFlow.sequential(stepA, stepB, stepC);
 
         String result = flow.execute(ctx, "start");
 
@@ -73,11 +73,11 @@ class AgentFlowTest {
         AgentContext namedCtx = AgentContext.withRunId("test-run-42");
         List<String> capturedRunIds = new ArrayList<>();
 
-        AgentStep<String, String> step1 = Step.of((AgentContext c, String input) -> {
+        Step<String, String> step1 = Steps.of((AgentContext c, String input) -> {
             capturedRunIds.add(c.runId());
             return input;
         });
-        AgentStep<String, String> step2 = Step.of((AgentContext c, String input) -> {
+        Step<String, String> step2 = Steps.of((AgentContext c, String input) -> {
             capturedRunIds.add(c.runId());
             return input;
         });
@@ -96,12 +96,12 @@ class AgentFlowTest {
 
     @Test
     void sequentialFlowsCompose() {
-        AgentStep<String, String> inner = AgentFlow.sequential(
-                Step.of((AgentContext c, String s) -> s + "-inner")
+        Step<String, String> inner = AgentFlow.sequential(
+                Steps.of((AgentContext c, String s) -> s + "-inner")
         );
-        AgentStep<String, String> outer = AgentFlow.sequential(
+        Step<String, String> outer = AgentFlow.sequential(
                 inner,
-                Step.of((AgentContext c, String s) -> s + "-outer")
+                Steps.of((AgentContext c, String s) -> s + "-outer")
         );
 
         assertThat(outer.execute(ctx, "x")).isEqualTo("x-inner-outer");
@@ -113,9 +113,9 @@ class AgentFlowTest {
 
     @Test
     void parallelShouldCollectAllResults() {
-        AgentStep<String, String> stepA = Step.of((AgentContext c, String input) -> input + "-A");
-        AgentStep<String, String> stepB = Step.of((AgentContext c, String input) -> input + "-B");
-        AgentStep<String, String> stepC = Step.of((AgentContext c, String input) -> input + "-C");
+        Step<String, String> stepA = Steps.of((AgentContext c, String input) -> input + "-A");
+        Step<String, String> stepB = Steps.of((AgentContext c, String input) -> input + "-B");
+        Step<String, String> stepC = Steps.of((AgentContext c, String input) -> input + "-C");
 
         AgentFlow.ParallelFlow<String, String> flow = AgentFlow.parallel(stepA, stepB, stepC);
 
@@ -129,11 +129,11 @@ class AgentFlowTest {
     void parallelShouldPassSameInputToAllSteps() {
         List<String> capturedInputs = new ArrayList<>();
 
-        AgentStep<String, String> step1 = Step.of((AgentContext c, String input) -> {
+        Step<String, String> step1 = Steps.of((AgentContext c, String input) -> {
             synchronized (capturedInputs) { capturedInputs.add(input); }
             return "r1";
         });
-        AgentStep<String, String> step2 = Step.of((AgentContext c, String input) -> {
+        Step<String, String> step2 = Steps.of((AgentContext c, String input) -> {
             synchronized (capturedInputs) { capturedInputs.add(input); }
             return "r2";
         });
@@ -145,11 +145,11 @@ class AgentFlowTest {
 
     @Test
     void parallelWithAggregateShouldReduceResults() {
-        AgentStep<String, String> s1 = Step.of((AgentContext c, String input) -> "part1");
-        AgentStep<String, String> s2 = Step.of((AgentContext c, String input) -> "part2");
-        AgentStep<String, String> s3 = Step.of((AgentContext c, String input) -> "part3");
+        Step<String, String> s1 = Steps.of((AgentContext c, String input) -> "part1");
+        Step<String, String> s2 = Steps.of((AgentContext c, String input) -> "part2");
+        Step<String, String> s3 = Steps.of((AgentContext c, String input) -> "part3");
 
-        AgentStep<String, String> flow = AgentFlow.parallel(s1, s2, s3)
+        Step<String, String> flow = AgentFlow.parallel(s1, s2, s3)
                 .aggregate(results -> String.join(", ", results));
 
         String result = flow.execute(ctx, "any");
@@ -159,13 +159,13 @@ class AgentFlowTest {
 
     @Test
     void parallelWithAggregateShouldBeComposableInSequential() {
-        AgentStep<String, String> s1 = Step.of((AgentContext c, String input) -> "A");
-        AgentStep<String, String> s2 = Step.of((AgentContext c, String input) -> "B");
-        AgentStep<String, String> combined = AgentFlow.parallel(s1, s2)
+        Step<String, String> s1 = Steps.of((AgentContext c, String input) -> "A");
+        Step<String, String> s2 = Steps.of((AgentContext c, String input) -> "B");
+        Step<String, String> combined = AgentFlow.parallel(s1, s2)
                 .aggregate(parts -> String.join("+", parts));
-        AgentStep<String, String> appendResult = Step.of((AgentContext c, String s) -> s + "=result");
+        Step<String, String> appendResult = Steps.of((AgentContext c, String s) -> s + "=result");
 
-        AgentStep<String, String> flow = AgentFlow.sequential(combined, appendResult);
+        Step<String, String> flow = AgentFlow.sequential(combined, appendResult);
 
         String result = flow.execute(ctx, "ignored");
 
@@ -187,12 +187,12 @@ class AgentFlowTest {
     @Test
     void loopShouldRepeatUntilConditionMet() {
         AtomicInteger callCount = new AtomicInteger(0);
-        AgentStep<Integer, Integer> increment = Step.of((AgentContext c, Integer n) -> {
+        Step<Integer, Integer> increment = Steps.of((AgentContext c, Integer n) -> {
             callCount.incrementAndGet();
             return n + 1;
         });
 
-        AgentStep<Integer, Integer> loop = AgentFlow.loop(
+        Step<Integer, Integer> loop = AgentFlow.loop(
                 increment,
                 until(n -> n >= 5),
                 maxIterations(10)
@@ -207,12 +207,12 @@ class AgentFlowTest {
     @Test
     void loopShouldReturnImmediatelyWhenConditionMetOnFirstIteration() {
         AtomicInteger callCount = new AtomicInteger(0);
-        AgentStep<String, String> step = Step.of((AgentContext c, String s) -> {
+        Step<String, String> step = Steps.of((AgentContext c, String s) -> {
             callCount.incrementAndGet();
             return "done";
         });
 
-        AgentStep<String, String> loop = AgentFlow.loop(
+        Step<String, String> loop = AgentFlow.loop(
                 step,
                 until(s -> s.equals("done")),
                 maxIterations(5)
@@ -226,9 +226,9 @@ class AgentFlowTest {
 
     @Test
     void loopShouldThrowWhenMaxIterationsExceededWithoutConditionMet() {
-        AgentStep<Integer, Integer> neverDone = Step.of((AgentContext c, Integer n) -> n + 1);
+        Step<Integer, Integer> neverDone = Steps.of((AgentContext c, Integer n) -> n + 1);
 
-        AgentStep<Integer, Integer> loop = AgentFlow.loop(
+        Step<Integer, Integer> loop = AgentFlow.loop(
                 neverDone,
                 until(n -> n > 100),
                 maxIterations(3)
@@ -242,12 +242,12 @@ class AgentFlowTest {
     @Test
     void loopShouldPassPreviousOutputAsNextInput() {
         List<Integer> seen = new ArrayList<>();
-        AgentStep<Integer, Integer> step = Step.of((AgentContext c, Integer n) -> {
+        Step<Integer, Integer> step = Steps.of((AgentContext c, Integer n) -> {
             seen.add(n);
             return n * 2;
         });
 
-        AgentStep<Integer, Integer> loop = AgentFlow.loop(
+        Step<Integer, Integer> loop = AgentFlow.loop(
                 step,
                 until(n -> n >= 8),
                 maxIterations(10)
@@ -285,7 +285,7 @@ class AgentFlowTest {
         AgentContext namedCtx = AgentContext.withRunId("loop-test");
         List<String> runIds = new ArrayList<>();
 
-        AgentStep<Integer, Integer> step = Step.of((AgentContext c, Integer n) -> {
+        Step<Integer, Integer> step = Steps.of((AgentContext c, Integer n) -> {
             runIds.add(c.runId());
             return n + 1;
         });

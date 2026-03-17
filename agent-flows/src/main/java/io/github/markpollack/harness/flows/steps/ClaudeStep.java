@@ -17,8 +17,8 @@ package io.github.markpollack.harness.flows.steps;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.markpollack.harness.flows.AgentContext;
-import io.github.markpollack.harness.flows.AgentStep;
 import io.github.markpollack.harness.flows.AgentStepException;
+import io.github.markpollack.harness.flows.Step;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -32,7 +32,7 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * An {@link AgentStep} that runs a full Claude agentic loop.
+ * A {@link Step} that runs a full Claude agentic loop.
  * <p>
  * {@code ClaudeStep} invokes the {@code claude} CLI in print mode ({@code -p}) and
  * blocks until Claude decides it is done. Claude drives the tool-calling loop
@@ -59,7 +59,7 @@ import java.util.Objects;
  * Inject a {@link ClaudeSyncClient} via {@link #withClient(ClaudeSyncClient)} to
  * replace the subprocess invocation with a mock or stub.
  */
-public class ClaudeStep implements AgentStep<String, String> {
+public class ClaudeStep implements Step<String, String> {
 
     private static final Logger logger = LoggerFactory.getLogger(ClaudeStep.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
@@ -142,6 +142,11 @@ public class ClaudeStep implements AgentStep<String, String> {
     public ClaudeStep withClient(ClaudeSyncClient client) {
         this.client = client;
         return this;
+    }
+
+    @Override
+    public String name() {
+        return "ClaudeStep";
     }
 
     @Override

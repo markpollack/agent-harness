@@ -16,7 +16,7 @@
 package io.github.markpollack.harness.flows;
 
 /**
- * Thrown when an {@link AgentStep} fails during execution.
+ * Thrown when a {@link Step} fails during execution.
  * <p>
  * Used by step implementations such as {@link io.github.markpollack.harness.flows.steps.GraphStep}
  * and {@link io.github.markpollack.harness.flows.steps.ClaudeStep} to wrap underlying errors

@@ -15,15 +15,15 @@
  */
 package io.github.markpollack.harness.flows.steps;
 
-import io.github.markpollack.harness.flows.AgentStep;
 import io.github.markpollack.harness.flows.AgentStepException;
+import io.github.markpollack.harness.flows.Step;
 import io.github.markpollack.harness.patterns.graph.GraphCompositionStrategy;
 import io.github.markpollack.harness.patterns.graph.GraphResult;
 
 /**
  * Bridge between {@link AgentFlow} and {@link GraphCompositionStrategy}.
  * <p>
- * {@code GraphStep} wraps a full graph as a single {@link AgentStep}, enabling
+ * {@code GraphStep} wraps a full graph as a single {@link Step}, enabling
  * composition of graphs inside an {@code AgentFlow} or nesting graphs within graphs.
  * This is the seam between the two composition abstractions.
  *
@@ -53,7 +53,7 @@ public final class GraphStep {
     }
 
     /**
-     * Wraps a {@link GraphCompositionStrategy} as an {@link AgentStep}.
+     * Wraps a {@link GraphCompositionStrategy} as a {@link Step}.
      * <p>
      * If the graph fails (stuck in node, max iterations, or error), an
      * {@link AgentStepException} is thrown with the failure details.
@@ -61,10 +61,10 @@ public final class GraphStep {
      * @param graph the graph to wrap
      * @param <I>   the graph's input type
      * @param <O>   the graph's output type
-     * @return an AgentStep that executes the graph
+     * @return a Step that executes the graph
      */
-    public static <I, O> AgentStep<I, O> of(GraphCompositionStrategy<I, O> graph) {
-        return (ctx, input) -> {
+    public static <I, O> Step<I, O> of(GraphCompositionStrategy<I, O> graph) {
+        return Step.named("GraphStep[" + graph.name() + "]", (ctx, input) -> {
             GraphResult<O> result = graph.execute(input);
             if (result.isFailure()) {
                 String detail = result.error() != null ? ": " + result.error().getMessage() : "";
@@ -72,6 +72,6 @@ public final class GraphStep {
                         "GraphStep '" + graph.name() + "' failed with status " + result.status() + detail);
             }
             return result.output();
-        };
+        });
     }
 }

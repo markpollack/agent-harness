@@ -17,81 +17,193 @@ package io.github.markpollack.harness.flows;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Execution context passed to every {@link AgentStep} in a flow run.
+ * The ambient metadata carrier threaded through every {@link Step} execution.
  * <p>
- * {@code AgentContext} carries a run identifier and a metadata map for sharing
- * state across steps. It is immutable: {@link #withMetadata(String, Object)} returns
- * a new instance rather than mutating the current one.
+ * Carries framework well-known keys (run identity, iteration count, accumulated cost)
+ * plus arbitrary user-defined keys — all type-safe via {@link ContextKey}.
+ * <p>
+ * Immutable: mutations produce a new instance via {@link #mutate()}.
+ * The {@code WorkflowExecutor} merges parallel branch results at join time;
+ * steps never write to a shared mutable context.
  * <p>
  * Create with {@link #create()} for a new run, or {@link #withRunId(String)} when
  * a specific identifier is needed (e.g., for traceability with an external job ID).
  */
 public final class AgentContext {
 
-    private final String runId;
-    private final Map<String, Object> metadata;
+    // -------------------------------------------------------------------------
+    // Framework well-known keys
+    // -------------------------------------------------------------------------
 
-    private AgentContext(String runId, Map<String, Object> metadata) {
-        this.runId = Objects.requireNonNull(runId, "runId must not be null");
-        this.metadata = Map.copyOf(metadata);
+    /** Unique identifier for this workflow execution. */
+    public static final ContextKey<String> WORKFLOW_RUN_ID =
+            ContextKey.of("workflowRunId", String.class);
+
+    /** Name of the workflow being executed. */
+    public static final ContextKey<String> WORKFLOW_NAME =
+            ContextKey.of("workflowName", String.class);
+
+    /** Name of the currently executing step. */
+    public static final ContextKey<String> CURRENT_STEP =
+            ContextKey.of("currentStep", String.class);
+
+    /** Number of loop iterations completed (for repeatUntil loops). */
+    public static final ContextKey<Integer> ITERATION_COUNT =
+            ContextKey.of("iterationCount", Integer.class);
+
+    /** Total USD cost accumulated across all steps in this run. */
+    public static final ContextKey<Double> ACCUMULATED_COST =
+            ContextKey.of("accumulatedCost", Double.class);
+
+    /** Total tokens consumed across all steps in this run. */
+    public static final ContextKey<Long> ACCUMULATED_TOKENS =
+            ContextKey.of("accumulatedTokens", Long.class);
+
+    // -------------------------------------------------------------------------
+    // Internal state
+    // -------------------------------------------------------------------------
+
+    private final Map<ContextKey<?>, Object> entries;
+
+    private AgentContext(Map<ContextKey<?>, Object> entries) {
+        this.entries = Map.copyOf(entries);
     }
 
+    // -------------------------------------------------------------------------
+    // Factory methods
+    // -------------------------------------------------------------------------
+
     /**
-     * Creates a new context with a random run ID and empty metadata.
+     * Creates a new context with a random run ID and no other entries.
      *
      * @return a new AgentContext
      */
     public static AgentContext create() {
-        return new AgentContext(UUID.randomUUID().toString(), Map.of());
+        return new AgentContext(Map.of(WORKFLOW_RUN_ID, UUID.randomUUID().toString()));
     }
 
     /**
-     * Creates a new context with the given run ID and empty metadata.
+     * Creates a new context with the given run ID and no other entries.
      *
      * @param runId the run identifier
      * @return a new AgentContext
      */
     public static AgentContext withRunId(String runId) {
-        return new AgentContext(runId, Map.of());
+        Objects.requireNonNull(runId, "runId must not be null");
+        return new AgentContext(Map.of(WORKFLOW_RUN_ID, runId));
+    }
+
+    // -------------------------------------------------------------------------
+    // Type-safe access
+    // -------------------------------------------------------------------------
+
+    /**
+     * Returns the value associated with the given key, if present.
+     *
+     * @param key the context key
+     * @param <T> the value type
+     * @return an Optional containing the value, or empty if absent
+     */
+    public <T> Optional<T> get(ContextKey<T> key) {
+        Object value = entries.get(key);
+        if (value == null) {
+            return Optional.empty();
+        }
+        return Optional.of(key.type().cast(value));
     }
 
     /**
-     * Returns the run identifier for this flow execution.
+     * Returns the value associated with the given key, or throws if absent.
+     *
+     * @param key the context key
+     * @param <T> the value type
+     * @return the value
+     * @throws NoSuchElementException if the key is not present
+     */
+    public <T> T require(ContextKey<T> key) {
+        return get(key).orElseThrow(() ->
+                new NoSuchElementException("Required context key not present: " + key));
+    }
+
+    // -------------------------------------------------------------------------
+    // Convenience accessors
+    // -------------------------------------------------------------------------
+
+    /**
+     * Returns the run identifier for this execution.
      *
      * @return the run ID
      */
     public String runId() {
-        return runId;
+        return require(WORKFLOW_RUN_ID);
     }
 
-    /**
-     * Returns an immutable view of the metadata map.
-     *
-     * @return the metadata
-     */
-    public Map<String, Object> metadata() {
-        return metadata;
-    }
+    // -------------------------------------------------------------------------
+    // Immutable mutation
+    // -------------------------------------------------------------------------
 
     /**
-     * Returns a new context with the given key-value pair added to metadata.
+     * Returns a builder pre-populated with all entries from this context.
+     * Modifications on the builder produce a new {@code AgentContext};
+     * this instance is unchanged.
      *
-     * @param key   the metadata key
-     * @param value the metadata value
-     * @return a new AgentContext with the additional entry
+     * @return a new Builder
      */
-    public AgentContext withMetadata(String key, Object value) {
-        Map<String, Object> updated = new HashMap<>(metadata);
-        updated.put(key, value);
-        return new AgentContext(runId, updated);
+    public Builder mutate() {
+        return new Builder(new HashMap<>(entries));
+    }
+
+    // -------------------------------------------------------------------------
+    // Builder
+    // -------------------------------------------------------------------------
+
+    /**
+     * Builder for constructing {@link AgentContext} instances.
+     * <p>
+     * Follows Spring AI's {@code ChatClientRequest.mutate()} pattern:
+     * immutable copy-with via builder.
+     */
+    public static final class Builder {
+
+        private final Map<ContextKey<?>, Object> entries;
+
+        private Builder(Map<ContextKey<?>, Object> entries) {
+            this.entries = entries;
+        }
+
+        /**
+         * Sets a typed key-value pair in the context being built.
+         *
+         * @param key   the context key
+         * @param value the value
+         * @param <T>   the value type
+         * @return this builder
+         */
+        public <T> Builder with(ContextKey<T> key, T value) {
+            Objects.requireNonNull(key, "key must not be null");
+            Objects.requireNonNull(value, "value must not be null");
+            entries.put(key, value);
+            return this;
+        }
+
+        /**
+         * Builds and returns a new immutable {@link AgentContext}.
+         *
+         * @return the built context
+         */
+        public AgentContext build() {
+            return new AgentContext(entries);
+        }
     }
 
     @Override
     public String toString() {
-        return "AgentContext[runId=" + runId + ", metadata=" + metadata + "]";
+        return "AgentContext[runId=" + get(WORKFLOW_RUN_ID).orElse("(none)") + ", keys=" + entries.keySet() + "]";
     }
 }

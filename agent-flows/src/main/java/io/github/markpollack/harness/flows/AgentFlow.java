@@ -22,7 +22,7 @@ import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 /**
- * Combinators for composing {@link AgentStep} instances into workflows.
+ * Combinators for composing {@link Step} instances into workflows.
  * <p>
  * {@code AgentFlow} provides three primitives:
  * <ul>
@@ -31,20 +31,14 @@ import java.util.stream.Collectors;
  *   <li>{@link #loop} — repeat a step until a condition is met or max iterations exceeded</li>
  * </ul>
  * <p>
- * {@code AgentFlow} itself implements {@link AgentStep}, so flows compose freely:
+ * {@code AgentFlow} itself implements {@link Step}, so flows compose freely:
  * <pre>{@code
  * AgentFlow.sequential(
  *     AgentFlow.parallel(fetchDiff, fetchCiStatus),     // parallel fetch
  *     ClaudeStep.of("review this: {input}"),            // then Claude reviews
- *     Step.of((ctx, review) -> github.postComment(review))
+ *     Steps.of((ctx, review) -> github.postComment(review))
  * )
  * }</pre>
- *
- * <h2>Choosing between AgentFlow and GraphCompositionStrategy</h2>
- * <p>
- * Start with {@code AgentFlow}. Reach for {@code GraphCompositionStrategy} when edge
- * routing logic would otherwise pollute step implementations (runtime branching based
- * on LLM output, step-level retry via back-edges).
  *
  * <h2>Implementation note</h2>
  * <p>
@@ -54,12 +48,12 @@ import java.util.stream.Collectors;
  *
  * <h2>Type safety in sequential</h2>
  * <p>
- * {@link #sequential(AgentStep[])} uses unchecked casts internally to allow chaining
+ * {@link #sequential(Step[])} uses unchecked casts internally to allow chaining
  * steps with heterogeneous types. The type parameters {@code I} and {@code O} correspond
  * to the first step's input and last step's output. Intermediate types are not enforced
  * at compile time — callers are responsible for step chain compatibility.
  */
-public abstract class AgentFlow<I, O> implements AgentStep<I, O> {
+public abstract class AgentFlow<I, O> implements Step<I, O> {
 
     // -------------------------------------------------------------------------
     // Combinators
@@ -79,16 +73,16 @@ public abstract class AgentFlow<I, O> implements AgentStep<I, O> {
      */
     @SuppressWarnings({"unchecked", "rawtypes"})
     @SafeVarargs
-    public static <I, O> AgentFlow<I, O> sequential(AgentStep<?, ?>... steps) {
+    public static <I, O> AgentFlow<I, O> sequential(Step<?, ?>... steps) {
         if (steps.length == 0) {
             throw new IllegalArgumentException("sequential requires at least one step");
         }
-        List<AgentStep<?, ?>> stepList = List.of(steps);
+        List<Step<?, ?>> stepList = List.of(steps);
         return new AgentFlow<>() {
             @Override
             public O execute(AgentContext ctx, I input) {
                 Object current = input;
-                for (AgentStep step : stepList) {
+                for (Step step : stepList) {
                     current = step.execute(ctx, current);
                 }
                 return (O) current;
@@ -110,7 +104,7 @@ public abstract class AgentFlow<I, O> implements AgentStep<I, O> {
      * @return a ParallelFlow that runs the steps concurrently
      */
     @SafeVarargs
-    public static <I, O> ParallelFlow<I, O> parallel(AgentStep<I, O>... steps) {
+    public static <I, O> ParallelFlow<I, O> parallel(Step<I, O>... steps) {
         if (steps.length == 0) {
             throw new IllegalArgumentException("parallel requires at least one step");
         }
@@ -139,7 +133,7 @@ public abstract class AgentFlow<I, O> implements AgentStep<I, O> {
      * @return an AgentFlow that loops the step
      * @throws MaxIterationsExceededException if the condition is not met within the limit
      */
-    public static <T> AgentFlow<T, T> loop(AgentStep<T, T> step, Predicate<T> until, MaxIterations max) {
+    public static <T> AgentFlow<T, T> loop(Step<T, T> step, Predicate<T> until, MaxIterations max) {
         return new AgentFlow<>() {
             @Override
             public T execute(AgentContext ctx, T input) {
@@ -210,9 +204,9 @@ public abstract class AgentFlow<I, O> implements AgentStep<I, O> {
      */
     public static final class ParallelFlow<I, O> extends AgentFlow<I, List<O>> {
 
-        private final List<AgentStep<I, O>> steps;
+        private final List<Step<I, O>> steps;
 
-        private ParallelFlow(List<AgentStep<I, O>> steps) {
+        private ParallelFlow(List<Step<I, O>> steps) {
             this.steps = steps;
         }
 

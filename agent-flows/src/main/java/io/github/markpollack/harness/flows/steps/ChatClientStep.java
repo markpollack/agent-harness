@@ -16,13 +16,13 @@
 package io.github.markpollack.harness.flows.steps;
 
 import io.github.markpollack.harness.flows.AgentContext;
-import io.github.markpollack.harness.flows.AgentStep;
+import io.github.markpollack.harness.flows.Step;
 import org.springframework.ai.chat.client.ChatClient;
 
 import java.util.Objects;
 
 /**
- * An {@link AgentStep} that makes a single structured LLM call via spring-ai
+ * A {@link Step} that makes a single structured LLM call via spring-ai
  * {@link ChatClient}.
  * <p>
  * One call, one response — no tool loop. This is the right step for classification,
@@ -42,7 +42,7 @@ import java.util.Objects;
  * The prompt template may contain {@code {input}} which is replaced with the
  * step's input value before the LLM call.
  */
-public class ChatClientStep implements AgentStep<String, String> {
+public class ChatClientStep implements Step<String, String> {
 
     private final ChatClient chatClient;
     private final String promptTemplate;
@@ -64,16 +64,16 @@ public class ChatClientStep implements AgentStep<String, String> {
     }
 
     /**
-     * Creates an {@link AgentStep} that returns a structured response mapped to
+     * Creates a {@link Step} that returns a structured response mapped to
      * {@code responseType} via spring-ai entity mapping.
      *
      * @param chatClient     the spring-ai ChatClient to use
      * @param promptTemplate the prompt template (may contain {@code {input}})
      * @param responseType   the class to map the LLM response to
      * @param <T>            the structured response type
-     * @return an AgentStep that produces a typed entity
+     * @return a Step that produces a typed entity
      */
-    public static <T> AgentStep<String, T> of(ChatClient chatClient, String promptTemplate, Class<T> responseType) {
+    public static <T> Step<String, T> of(ChatClient chatClient, String promptTemplate, Class<T> responseType) {
         Objects.requireNonNull(chatClient, "chatClient must not be null");
         Objects.requireNonNull(promptTemplate, "promptTemplate must not be null");
         Objects.requireNonNull(responseType, "responseType must not be null");
@@ -81,6 +81,11 @@ public class ChatClientStep implements AgentStep<String, String> {
             String resolved = resolve(promptTemplate, input);
             return chatClient.prompt().user(resolved).call().entity(responseType);
         };
+    }
+
+    @Override
+    public String name() {
+        return "ChatClientStep";
     }
 
     @Override

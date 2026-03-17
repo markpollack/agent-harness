@@ -16,8 +16,8 @@
 package io.github.markpollack.harness.flows.steps;
 
 import io.github.markpollack.harness.flows.AgentContext;
-import io.github.markpollack.harness.flows.AgentStep;
 import io.github.markpollack.harness.flows.AgentStepException;
+import io.github.markpollack.harness.flows.Step;
 import io.github.markpollack.harness.patterns.graph.GraphCompositionStrategy;
 import io.github.markpollack.harness.patterns.graph.GraphContext;
 import org.junit.jupiter.api.Test;
@@ -39,7 +39,7 @@ class GraphStepTest {
                 .edge("transform").to("finish")
                 .build();
 
-        AgentStep<String, String> step = GraphStep.of(graph);
+        Step<String, String> step = GraphStep.of(graph);
 
         assertThat(step.execute(ctx, "hello")).isEqualTo("HELLO!");
     }
@@ -52,7 +52,7 @@ class GraphStepTest {
                 .finishNode("finish")
                 .build();  // no edge from start → will get stuck immediately
 
-        AgentStep<String, String> step = GraphStep.of(stuckGraph);
+        Step<String, String> step = GraphStep.of(stuckGraph);
 
         assertThatThrownBy(() -> step.execute(ctx, "test"))
                 .isInstanceOf(AgentStepException.class)
@@ -67,8 +67,21 @@ class GraphStepTest {
                 .edge("start").to("finish")
                 .build();
 
-        AgentStep<String, String> step = GraphStep.of(passThrough);
+        Step<String, String> step = GraphStep.of(passThrough);
 
         assertThat(step.execute(ctx, "unchanged")).isEqualTo("unchanged");
+    }
+
+    @Test
+    void ofShouldProduceNamedStep() {
+        GraphCompositionStrategy<String, String> graph = GraphCompositionStrategy.<String, String>builder("my-graph")
+                .startNode("start")
+                .finishNode("finish")
+                .edge("start").to("finish")
+                .build();
+
+        Step<String, String> step = GraphStep.of(graph);
+
+        assertThat(step.name()).isEqualTo("GraphStep[my-graph]");
     }
 }

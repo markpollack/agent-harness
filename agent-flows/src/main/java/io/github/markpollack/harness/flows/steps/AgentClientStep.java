@@ -16,12 +16,12 @@
 package io.github.markpollack.harness.flows.steps;
 
 import io.github.markpollack.harness.flows.AgentContext;
-import io.github.markpollack.harness.flows.AgentStep;
+import io.github.markpollack.harness.flows.Step;
 
 import java.util.Objects;
 
 /**
- * An {@link AgentStep} that delegates to an {@link AgentClient}.
+ * A {@link Step} that delegates to an {@link AgentClient}.
  * <p>
  * Use when the agent invocation goes through the {@link AgentClient} abstraction
  * rather than directly through a specific client. This is the right step when:
@@ -40,7 +40,7 @@ import java.util.Objects;
  * The prompt template may contain {@code {input}} which is replaced with the
  * step's input value before delegation to the client.
  */
-public class AgentClientStep implements AgentStep<String, String> {
+public class AgentClientStep implements Step<String, String> {
 
     private final AgentClient client;
     private final String promptTemplate;
@@ -59,6 +59,11 @@ public class AgentClientStep implements AgentStep<String, String> {
      */
     public static AgentClientStep of(AgentClient client, String promptTemplate) {
         return new AgentClientStep(client, promptTemplate);
+    }
+
+    @Override
+    public String name() {
+        return "AgentClientStep";
     }
 
     @Override

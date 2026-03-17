@@ -16,58 +16,60 @@
 package io.github.markpollack.harness.flows.steps;
 
 import io.github.markpollack.harness.flows.AgentContext;
-import io.github.markpollack.harness.flows.AgentStep;
+import io.github.markpollack.harness.flows.Step;
 
 import java.util.function.BiFunction;
 import java.util.function.Function;
 
 /**
- * Factory for creating plain Java {@link AgentStep} instances — no LLM involved.
+ * Factory for creating plain Java {@link Step} instances — no LLM involved.
  * <p>
  * This is the workhorse for deterministic steps: API calls, test runners,
  * file I/O, data fetching, posting results. The lambda receives the
  * {@link AgentContext} and the step input, and returns the step output.
  *
  * <pre>{@code
- * Step.of((ctx, event) -> github.fetchPRDiff(event.prNumber()))
- * Step.of((ctx, result) -> testRunner.run())
- * Step.of((ctx, input) -> db.lookup(input))
+ * Steps.of((ctx, event) -> github.fetchPRDiff(event.prNumber()))
+ * Steps.of((ctx, result) -> testRunner.run())
+ * Steps.of((ctx, input) -> db.lookup(input))
  * }</pre>
  *
  * When context is not needed, use the single-argument overload:
  * <pre>{@code
- * Step.of(input -> processData(input))
+ * Steps.of(input -> processData(input))
  * }</pre>
+ *
+ * For named steps that appear in traces, use {@link Step#named(String, BiFunction)}.
  */
-public final class Step {
+public final class Steps {
 
-    private Step() {
+    private Steps() {
     }
 
     /**
-     * Creates an {@link AgentStep} from a {@link BiFunction} that receives both
+     * Creates a {@link Step} from a {@link BiFunction} that receives both
      * the context and the input.
      *
      * @param fn  the function to wrap
      * @param <I> the input type
      * @param <O> the output type
-     * @return an AgentStep backed by the given function
+     * @return a Step backed by the given function
      */
-    public static <I, O> AgentStep<I, O> of(BiFunction<AgentContext, I, O> fn) {
+    public static <I, O> Step<I, O> of(BiFunction<AgentContext, I, O> fn) {
         return fn::apply;
     }
 
     /**
-     * Creates an {@link AgentStep} from a {@link Function} that receives only the input.
+     * Creates a {@link Step} from a {@link Function} that receives only the input.
      * <p>
      * Use when the step logic does not need access to the {@link AgentContext}.
      *
      * @param fn  the function to wrap
      * @param <I> the input type
      * @param <O> the output type
-     * @return an AgentStep that ignores context and delegates to the given function
+     * @return a Step that ignores context and delegates to the given function
      */
-    public static <I, O> AgentStep<I, O> of(Function<I, O> fn) {
+    public static <I, O> Step<I, O> of(Function<I, O> fn) {
         return (ctx, input) -> fn.apply(input);
     }
 }
