@@ -162,10 +162,20 @@ public class WorkflowExecutor {
                 return (O) output;
             }
 
-            // Find next edge
+            // Find next edge — skip error edges (they are only taken via the exception path)
             List<WorkflowEdge> outgoing = graph.edgesFrom(currentNodeName);
+            List<WorkflowEdge> normalEdges = outgoing.stream()
+                    .filter(e -> e.label() == null || !e.label().startsWith("error:"))
+                    .toList();
+
+            if (normalEdges.isEmpty()) {
+                // Node has only error edges (or none) — treat as terminal on happy path
+                logger.debug("Workflow '{}' completed at terminal node '{}'", graph.name(), currentNodeName);
+                return (O) output;
+            }
+
             WorkflowEdge nextEdge = null;
-            for (WorkflowEdge edge : outgoing) {
+            for (WorkflowEdge edge : normalEdges) {
                 if (edge.matches(output)) {
                     nextEdge = edge;
                     break;
