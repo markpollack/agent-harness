@@ -16,6 +16,7 @@
 package io.github.markpollack.harness.flows.steps;
 
 import io.github.markpollack.harness.flows.AgentContext;
+import io.github.markpollack.harness.flows.AgentStep;
 import io.github.markpollack.harness.flows.Step;
 
 import java.util.Objects;
@@ -40,7 +41,7 @@ import java.util.Objects;
  * The prompt template may contain {@code {input}} which is replaced with the
  * step's input value before delegation to the client.
  */
-public class AgentClientStep implements Step<String, String> {
+public class AgentClientStep implements Step<String, String>, AgentStep {
 
     private final AgentClient client;
     private final String promptTemplate;

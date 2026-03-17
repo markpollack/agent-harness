@@ -16,6 +16,7 @@
 package io.github.markpollack.harness.flows.workflow;
 
 import io.github.markpollack.harness.flows.AgentContext;
+import io.github.markpollack.harness.flows.AgentStep;
 import io.github.markpollack.harness.flows.Step;
 import io.github.markpollack.harness.patterns.graph.NodeType;
 import org.springframework.ai.chat.client.ChatClient;
@@ -350,13 +351,7 @@ public final class Workflow<I, O> implements Step<I, O> {
         }
 
         private NodeType detectNodeType(Step<?, ?> step) {
-            // ClaudeStep and ChatClientStep are AGENT type; everything else is DETERMINISTIC
-            String className = step.getClass().getSimpleName();
-            if (className.contains("ClaudeStep") || className.contains("ChatClientStep")
-                    || className.contains("AgentClientStep")) {
-                return NodeType.AGENT;
-            }
-            return NodeType.DETERMINISTIC;
+            return (step instanceof AgentStep) ? NodeType.AGENT : NodeType.DETERMINISTIC;
         }
 
         // Package-private for sub-builders

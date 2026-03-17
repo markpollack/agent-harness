@@ -16,6 +16,7 @@
 package io.github.markpollack.harness.flows.steps;
 
 import io.github.markpollack.harness.flows.AgentContext;
+import io.github.markpollack.harness.flows.AgentStep;
 import io.github.markpollack.harness.flows.Step;
 import org.springframework.ai.chat.client.ChatClient;
 
@@ -42,7 +43,7 @@ import java.util.Objects;
  * The prompt template may contain {@code {input}} which is replaced with the
  * step's input value before the LLM call.
  */
-public class ChatClientStep implements Step<String, String> {
+public class ChatClientStep implements Step<String, String>, AgentStep {
 
     private final ChatClient chatClient;
     private final String promptTemplate;

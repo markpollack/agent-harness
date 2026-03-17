@@ -17,6 +17,7 @@ package io.github.markpollack.harness.flows.steps;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.markpollack.harness.flows.AgentContext;
+import io.github.markpollack.harness.flows.AgentStep;
 import io.github.markpollack.harness.flows.AgentStepException;
 import io.github.markpollack.harness.flows.Step;
 import org.slf4j.Logger;
@@ -59,7 +60,7 @@ import java.util.Objects;
  * Inject a {@link ClaudeSyncClient} via {@link #withClient(ClaudeSyncClient)} to
  * replace the subprocess invocation with a mock or stub.
  */
-public class ClaudeStep implements Step<String, String> {
+public class ClaudeStep implements Step<String, String>, AgentStep {
 
     private static final Logger logger = LoggerFactory.getLogger(ClaudeStep.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();

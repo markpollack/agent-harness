@@ -17,6 +17,7 @@ package io.github.markpollack.harness.agents.mini;
 
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -39,14 +40,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.fail;
 
 /**
- * Integration tests for MiniAgent using real Anthropic Claude API.
+ * Integration tests for MiniAgent using the Anthropic API directly.
  * <p>
- * These tests require the ANTHROPIC_API_KEY environment variable to be set.
- * Run with Maven Failsafe plugin:
- * <pre>
- * mvn verify -pl harness-examples
- * </pre>
+ * <strong>Note</strong>: This test class uses {@code AnthropicChatModel} (Spring AI) which
+ * requires {@code ANTHROPIC_API_KEY}. New LLM integration tests should use
+ * {@code ClaudeStep} instead — it invokes the {@code claude} CLI subprocess and
+ * authenticates via Claude Max plan (no API key required).
+ * <p>
+ * Skipped automatically when {@code ANTHROPIC_API_KEY} is not set.
  */
+@Disabled("MiniAgent superseded by loopy project. ClaudeStep is the replacement for LLM integration.")
 @DisplayName("MiniAgent Integration Tests")
 @EnabledIfEnvironmentVariable(named = "ANTHROPIC_API_KEY", matches = ".+")
 class MiniAgentIT {
