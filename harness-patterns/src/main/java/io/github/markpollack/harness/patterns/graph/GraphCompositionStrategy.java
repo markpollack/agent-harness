@@ -15,12 +15,14 @@
  */
 package io.github.markpollack.harness.patterns.graph;
 
+import io.github.markpollack.harness.core.LoopResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -135,6 +137,7 @@ public final class GraphCompositionStrategy<I, O> {
     public GraphResult<O> executeWithContext(GraphContext context, I input) {
         Instant startTime = Instant.now();
         List<String> path = new ArrayList<>();
+        Map<String, NodeMetrics> metricsMap = new HashMap<>();
         int iterations = 0;
 
         GraphNode<?, ?> current = nodes.get(startNodeName);
@@ -155,8 +158,11 @@ public final class GraphCompositionStrategy<I, O> {
                 path.add(current.name());
                 logger.debug("Executing node: {} (iteration {})", current.name(), iterations);
 
-                // Execute current node
+                // Execute current node, collecting per-node metrics
+                Instant nodeStart = Instant.now();
                 Object nodeOutput = executeNodeUnsafe(current, context, currentInput);
+                Duration nodeDuration = Duration.between(nodeStart, Instant.now());
+                metricsMap.put(current.name(), buildNodeMetrics(current, nodeOutput, nodeDuration));
                 logger.trace("Node {} produced output: {}", current.name(), nodeOutput);
 
                 // Check if we're at the finish node
@@ -165,7 +171,7 @@ public final class GraphCompositionStrategy<I, O> {
                     logger.debug("Graph {} completed successfully in {} iterations", name, iterations);
                     @SuppressWarnings("unchecked")
                     O typedOutput = (O) nodeOutput;
-                    return GraphResult.completed(typedOutput, path, iterations, duration);
+                    return GraphResult.completed(typedOutput, path, iterations, duration, Map.copyOf(metricsMap));
                 }
 
                 // Find matching edge
@@ -188,6 +194,20 @@ public final class GraphCompositionStrategy<I, O> {
             Duration duration = Duration.between(startTime, Instant.now());
             return GraphResult.error(e, path, iterations, duration);
         }
+    }
+
+    /**
+     * Builds NodeMetrics for a node after it has executed.
+     * For AGENT nodes, extracts token counts from the output if it's a LoopResult.
+     */
+    private NodeMetrics buildNodeMetrics(GraphNode<?, ?> node, Object output, Duration duration) {
+        if (node.nodeType() == NodeType.DETERMINISTIC) {
+            return NodeMetrics.deterministic(duration);
+        }
+        if (output instanceof LoopResult loopResult) {
+            return NodeMetrics.agent(duration, loopResult.totalTokens(), loopResult.estimatedCost());
+        }
+        return NodeMetrics.agent(duration, 0L, 0.0);
     }
 
     /**

@@ -1,0 +1,13 @@
+name: CI Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    uses: markpollack/build-tools/.github/workflows/ci-build.yml@main
+    with:
+      java-version: '17'

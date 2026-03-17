@@ -62,6 +62,18 @@ public interface GraphNode<I, O> {
     O execute(GraphContext context, I input);
 
     /**
+     * Returns the type of this node — deterministic or agent-driven.
+     * <p>
+     * Defaults to {@link NodeType#AGENT} for backward compatibility.
+     * {@link FunctionGraphNode} overrides to {@link NodeType#DETERMINISTIC}.
+     *
+     * @return the node type
+     */
+    default NodeType nodeType() {
+        return NodeType.AGENT;
+    }
+
+    /**
      * Creates a node from a simple function.
      * <p>
      * Use this for lightweight transformations or computations that don't require

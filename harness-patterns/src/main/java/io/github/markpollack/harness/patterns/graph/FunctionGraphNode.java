@@ -54,6 +54,11 @@ public final class FunctionGraphNode<I, O> implements GraphNode<I, O> {
     }
 
     @Override
+    public NodeType nodeType() {
+        return NodeType.DETERMINISTIC;
+    }
+
+    @Override
     public String toString() {
         return "FunctionGraphNode[" + name + "]";
     }

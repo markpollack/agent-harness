@@ -17,6 +17,7 @@ package io.github.markpollack.harness.patterns.graph;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -43,6 +44,7 @@ public final class GraphResult<O> {
     private final int iterations;
     private final Duration duration;
     private final Throwable error;
+    private final Map<String, NodeMetrics> nodeMetrics;
 
     private GraphResult(
             GraphStatus status,
@@ -51,7 +53,8 @@ public final class GraphResult<O> {
             String stuckNodeName,
             int iterations,
             Duration duration,
-            Throwable error) {
+            Throwable error,
+            Map<String, NodeMetrics> nodeMetrics) {
         this.status = Objects.requireNonNull(status, "status must not be null");
         this.output = output;
         this.pathTaken = List.copyOf(Objects.requireNonNull(pathTaken, "pathTaken must not be null"));
@@ -59,6 +62,7 @@ public final class GraphResult<O> {
         this.iterations = iterations;
         this.duration = Objects.requireNonNull(duration, "duration must not be null");
         this.error = error;
+        this.nodeMetrics = Map.copyOf(Objects.requireNonNull(nodeMetrics, "nodeMetrics must not be null"));
     }
 
     /**
@@ -72,7 +76,23 @@ public final class GraphResult<O> {
      * @return a completed GraphResult
      */
     public static <O> GraphResult<O> completed(O output, List<String> pathTaken, int iterations, Duration duration) {
-        return new GraphResult<>(GraphStatus.COMPLETED, output, pathTaken, null, iterations, duration, null);
+        return new GraphResult<>(GraphStatus.COMPLETED, output, pathTaken, null, iterations, duration, null, Map.of());
+    }
+
+    /**
+     * Creates a successful result with per-node execution metrics.
+     *
+     * @param output the output value
+     * @param pathTaken the nodes visited during execution
+     * @param iterations the number of graph iterations
+     * @param duration the total execution time
+     * @param nodeMetrics per-node execution metrics keyed by node name
+     * @param <O> the output type
+     * @return a completed GraphResult with metrics
+     */
+    public static <O> GraphResult<O> completed(O output, List<String> pathTaken, int iterations, Duration duration,
+            Map<String, NodeMetrics> nodeMetrics) {
+        return new GraphResult<>(GraphStatus.COMPLETED, output, pathTaken, null, iterations, duration, null, nodeMetrics);
     }
 
     /**
@@ -89,7 +109,7 @@ public final class GraphResult<O> {
      * @return a stuck GraphResult
      */
     public static <O> GraphResult<O> stuckInNode(String nodeName, List<String> pathTaken, int iterations, Duration duration) {
-        return new GraphResult<>(GraphStatus.STUCK_IN_NODE, null, pathTaken, nodeName, iterations, duration, null);
+        return new GraphResult<>(GraphStatus.STUCK_IN_NODE, null, pathTaken, nodeName, iterations, duration, null, Map.of());
     }
 
     /**
@@ -102,7 +122,7 @@ public final class GraphResult<O> {
      * @return a max iterations GraphResult
      */
     public static <O> GraphResult<O> maxIterationsExceeded(List<String> pathTaken, int iterations, Duration duration) {
-        return new GraphResult<>(GraphStatus.MAX_ITERATIONS, null, pathTaken, null, iterations, duration, null);
+        return new GraphResult<>(GraphStatus.MAX_ITERATIONS, null, pathTaken, null, iterations, duration, null, Map.of());
     }
 
     /**
@@ -116,7 +136,7 @@ public final class GraphResult<O> {
      * @return an error GraphResult
      */
     public static <O> GraphResult<O> error(Throwable error, List<String> pathTaken, int iterations, Duration duration) {
-        return new GraphResult<>(GraphStatus.ERROR, null, pathTaken, null, iterations, duration, error);
+        return new GraphResult<>(GraphStatus.ERROR, null, pathTaken, null, iterations, duration, error, Map.of());
     }
 
     /**
@@ -181,6 +201,17 @@ public final class GraphResult<O> {
      */
     public Throwable error() {
         return error;
+    }
+
+    /**
+     * Returns per-node execution metrics, keyed by node name.
+     * Only populated when using the {@link #completed(Object, List, int, Duration, Map)} factory.
+     * Empty map for all other statuses.
+     *
+     * @return immutable map of node metrics (may be empty)
+     */
+    public Map<String, NodeMetrics> nodeMetrics() {
+        return nodeMetrics;
     }
 
     /**
