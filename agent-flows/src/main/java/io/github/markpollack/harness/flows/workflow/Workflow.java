@@ -18,9 +18,12 @@ package io.github.markpollack.harness.flows.workflow;
 import io.github.markpollack.harness.flows.AgentContext;
 import io.github.markpollack.harness.flows.Step;
 import io.github.markpollack.harness.patterns.graph.NodeType;
+import org.springframework.ai.chat.client.ChatClient;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -209,6 +212,31 @@ public final class Workflow<I, O> implements Step<I, O> {
          */
         public LoopBuilder<I, O> repeatUntil(Predicate<AgentContext> predicate) {
             return new LoopBuilder<>(this, predicate);
+        }
+
+        /**
+         * Opens an LLM-driven routing decision.
+         * <p>
+         * The routing LLM receives the current input and a list of named options,
+         * then chooses one option name. The chosen option's step is executed.
+         * <p>
+         * Use when the next step should be chosen by the agent at runtime, not by
+         * a deterministic predicate. For deterministic routing, prefer {@link #branch(Predicate)}.
+         *
+         * <pre>{@code
+         * .step(analyzeIssue)
+         * .decision(routingClient)
+         *     .option("fix-code", applyFix)
+         *     .option("add-test", addTest)
+         *     .option("escalate", notifyHuman)
+         * .end()
+         * }</pre>
+         *
+         * @param routingClient the ChatClient used to choose the option
+         * @return a DecisionBuilder for registering named options
+         */
+        public DecisionBuilder<I, O> decision(ChatClient routingClient) {
+            return new DecisionBuilder<>(this, routingClient);
         }
 
         /**
@@ -496,6 +524,74 @@ public final class Workflow<I, O> implements Step<I, O> {
                 parent.addEdge(WorkflowEdge.of(parent.lastNodeName(), branchName));
             }
             parent.setLastNodeName(branchName);
+            return parent;
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // DecisionBuilder
+    // -------------------------------------------------------------------------
+
+    /**
+     * Builder for LLM-driven routing decisions within a workflow.
+     * <p>
+     * The routing LLM selects one named option at runtime based on the current input.
+     *
+     * @param <I> workflow input type
+     * @param <O> workflow output type
+     */
+    public static final class DecisionBuilder<I, O> {
+
+        private final WorkflowBuilder<I, O> parent;
+        private final ChatClient routingClient;
+        private final Map<String, Step<?, ?>> options = new LinkedHashMap<>();
+
+        private DecisionBuilder(WorkflowBuilder<I, O> parent, ChatClient routingClient) {
+            this.parent = parent;
+            this.routingClient = Objects.requireNonNull(routingClient, "routingClient must not be null");
+        }
+
+        /**
+         * Registers a named option that the LLM can choose.
+         *
+         * @param name the option name (used in the routing prompt)
+         * @param step the step to execute when this option is chosen
+         * @return this decision builder
+         */
+        public DecisionBuilder<I, O> option(String name, Step<?, ?> step) {
+            Objects.requireNonNull(name, "option name must not be null");
+            Objects.requireNonNull(step, "option step must not be null");
+            if (options.containsKey(name)) {
+                throw new IllegalArgumentException("Duplicate decision option name: '" + name + "'");
+            }
+            options.put(name, step);
+            return this;
+        }
+
+        /**
+         * Closes the decision block and returns to the outer workflow builder.
+         * <p>
+         * Creates a single synthetic node in the graph that calls the routing LLM
+         * and dispatches to the chosen option's step.
+         *
+         * @return the parent workflow builder
+         * @throws IllegalStateException if no options have been registered
+         */
+        public WorkflowBuilder<I, O> end() {
+            if (options.isEmpty()) {
+                throw new IllegalStateException("decision() requires at least one .option()");
+            }
+
+            String decisionName = "decision-" + parent.nodeCounter.incrementAndGet();
+            DecisionStep decisionStep = new DecisionStep(
+                    decisionName, routingClient, options, DecisionStep.DEFAULT_PROMPT_TEMPLATE);
+
+            WorkflowNode node = new WorkflowNode(decisionName, NodeType.AGENT, decisionStep);
+            parent.addNode(node);
+            if (parent.lastNodeName() != null) {
+                parent.addEdge(WorkflowEdge.of(parent.lastNodeName(), decisionName));
+            }
+            parent.setLastNodeName(decisionName);
             return parent;
         }
     }
