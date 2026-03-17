@@ -17,6 +17,8 @@ package io.github.markpollack.harness.flows.steps;
 
 import io.github.markpollack.harness.flows.AgentContext;
 import io.github.markpollack.harness.flows.Step;
+import io.github.markpollack.harness.flows.workflow.WorkflowStatus;
+import io.github.markpollack.harness.flows.workflow.WorkflowTerminatedException;
 
 import java.util.function.BiFunction;
 import java.util.function.Function;
@@ -71,5 +73,29 @@ public final class Steps {
      */
     public static <I, O> Step<I, O> of(Function<I, O> fn) {
         return (ctx, input) -> fn.apply(input);
+    }
+
+    /**
+     * Creates a step that terminates the workflow with the given status and message.
+     * <p>
+     * Usable inside branch cases, error paths, and default cases.
+     * The step is a named graph node visible in traces and visualization.
+     *
+     * <pre>{@code
+     * .branch(output -> isValid(output))
+     *     .then(commit)
+     *     .otherwise(Steps.terminate(WorkflowStatus.FAILED, "Validation failed"))
+     * }</pre>
+     *
+     * @param status  the terminal status
+     * @param message human-readable reason for termination
+     * @param <I>     input type (accepts any input)
+     * @param <O>     output type (never reached — throws)
+     * @return a Step that terminates the workflow
+     */
+    public static <I, O> Step<I, O> terminate(WorkflowStatus status, String message) {
+        return Step.named("terminate[" + status + "]", (ctx, input) -> {
+            throw new WorkflowTerminatedException(status, message);
+        });
     }
 }
