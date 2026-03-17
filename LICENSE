@@ -10,7 +10,9 @@ Additional Use Grant: You may make production use of the Licensed Work,
                       Licensed Work, directly or indirectly, to third
                       parties (other than employees or contractors acting
                       on your behalf) on a hosted, managed, or embedded
-                      basis as part of a commercial service or product.
+                      basis, or providing access to its functionality
+                      via an API, as part of a commercial service or
+                      product.
 Change Date:          2030-03-04
 Change License:       Apache License, Version 2.0
 
