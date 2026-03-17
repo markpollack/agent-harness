@@ -37,22 +37,43 @@ public class WorkflowExecutor {
 
     private static final int DEFAULT_MAX_ITERATIONS = 1000;
 
+    private final PartitionHandler partitionHandler;
     private final TraceRecorder traceRecorder;
 
     /**
-     * Creates an executor with a TraceRecorder.
+     * Creates an executor with a PartitionHandler and TraceRecorder.
      *
-     * @param traceRecorder the recorder for step transitions
+     * @param partitionHandler the substrate handler for step dispatch
+     * @param traceRecorder    the recorder for step transitions
      */
-    public WorkflowExecutor(TraceRecorder traceRecorder) {
+    public WorkflowExecutor(PartitionHandler partitionHandler, TraceRecorder traceRecorder) {
+        this.partitionHandler = partitionHandler != null ? partitionHandler : new LocalPartitionHandler();
         this.traceRecorder = traceRecorder != null ? traceRecorder : TraceRecorder.noop();
     }
 
     /**
-     * Creates an executor with no-op tracing (zero overhead).
+     * Creates an executor with a TraceRecorder and default local handler.
+     *
+     * @param traceRecorder the recorder for step transitions
+     */
+    public WorkflowExecutor(TraceRecorder traceRecorder) {
+        this(new LocalPartitionHandler(), traceRecorder);
+    }
+
+    /**
+     * Creates an executor with defaults (local handler, no-op tracing).
      */
     public WorkflowExecutor() {
-        this(TraceRecorder.noop());
+        this(new LocalPartitionHandler(), TraceRecorder.noop());
+    }
+
+    /**
+     * Returns the partition handler used by this executor.
+     *
+     * @return the partition handler
+     */
+    public PartitionHandler partitionHandler() {
+        return partitionHandler;
     }
 
     /**
@@ -102,12 +123,12 @@ public class WorkflowExecutor {
 
             logger.debug("Executing node '{}' (iteration {})", node.name(), iterations);
 
-            // Execute the step and record the transition
+            // Execute the step through PartitionHandler and record the transition
             Instant stepStart = Instant.now();
             Object output;
             try {
                 Step step = node.step();
-                output = step.execute(ctx, currentInput);
+                output = partitionHandler.execute(step, ctx, currentInput);
             } catch (WorkflowTerminatedException e) {
                 Duration stepDuration = Duration.between(stepStart, Instant.now());
                 recordTransition(runId, graph.name(), previousNodeName, node.name(),
