@@ -1,24 +1,12 @@
-/*
- * Copyright 2024-2026 Mark Pollack
- *
- * Licensed under the Business Source License 1.1 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *      https://mariadb.com/bsl11/
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
 package io.github.markpollack.harness.flows.workflow;
 
 import io.github.markpollack.harness.flows.AgentContext;
 import io.github.markpollack.harness.flows.Step;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.client.ChatClient;
+
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -30,52 +18,37 @@ import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
 class DecisionTest {
 
     // -------------------------------------------------------------------------
-    // DecisionStep unit tests
+    // DecisionStep unit tests (now returns chosen label, not step result)
     // -------------------------------------------------------------------------
 
     @Test
-    void decisionStepShouldRouteToChosenOption() {
+    void decisionStepShouldReturnChosenLabel() {
         ChatClient client = mockClientReturning("option-b");
-        Step<String, String> stepA = Step.named("option-a", (ctx, in) -> "chose-A");
-        Step<String, String> stepB = Step.named("option-b", (ctx, in) -> "chose-B");
-
-        java.util.Map<String, Step<?, ?>> options = new java.util.LinkedHashMap<>();
-        options.put("option-a", stepA);
-        options.put("option-b", stepB);
+        Set<String> options = new LinkedHashSet<>(Set.of("option-a", "option-b"));
 
         DecisionStep decision = new DecisionStep("test-decision", client, options,
                 DecisionStep.DEFAULT_PROMPT_TEMPLATE);
 
         Object result = decision.execute(AgentContext.create(), "some input");
-
-        assertThat(result).isEqualTo("chose-B");
+        assertThat(result).isEqualTo("option-b");
     }
 
     @Test
-    void decisionStepShouldRouteToFirstOptionWhenChosen() {
+    void decisionStepShouldReturnFirstOptionWhenChosen() {
         ChatClient client = mockClientReturning("fix-code");
-        Step<String, String> fixCode = Step.named("fix-code", (ctx, in) -> "applied fix");
-        Step<String, String> addTest = Step.named("add-test", (ctx, in) -> "added test");
-
-        java.util.Map<String, Step<?, ?>> options = new java.util.LinkedHashMap<>();
-        options.put("fix-code", fixCode);
-        options.put("add-test", addTest);
+        Set<String> options = new LinkedHashSet<>(Set.of("fix-code", "add-test"));
 
         DecisionStep decision = new DecisionStep("router", client, options,
                 DecisionStep.DEFAULT_PROMPT_TEMPLATE);
 
         Object result = decision.execute(AgentContext.create(), "broken code");
-
-        assertThat(result).isEqualTo("applied fix");
+        assertThat(result).isEqualTo("fix-code");
     }
 
     @Test
     void decisionStepShouldThrowOnUnknownOption() {
         ChatClient client = mockClientReturning("nonexistent");
-        Step<String, String> stepA = Step.named("option-a", (ctx, in) -> "A");
-
-        java.util.Map<String, Step<?, ?>> options = new java.util.LinkedHashMap<>();
-        options.put("option-a", stepA);
+        Set<String> options = new LinkedHashSet<>(Set.of("option-a"));
 
         DecisionStep decision = new DecisionStep("test", client, options,
                 DecisionStep.DEFAULT_PROMPT_TEMPLATE);
@@ -89,26 +62,19 @@ class DecisionTest {
     @Test
     void decisionStepShouldStripWhitespaceFromLlmResponse() {
         ChatClient client = mockClientReturning("  option-a  \n");
-        Step<String, String> stepA = Step.named("option-a", (ctx, in) -> "trimmed-route");
-
-        java.util.Map<String, Step<?, ?>> options = new java.util.LinkedHashMap<>();
-        options.put("option-a", stepA);
+        Set<String> options = new LinkedHashSet<>(Set.of("option-a"));
 
         DecisionStep decision = new DecisionStep("test", client, options,
                 DecisionStep.DEFAULT_PROMPT_TEMPLATE);
 
         Object result = decision.execute(AgentContext.create(), "input");
-
-        assertThat(result).isEqualTo("trimmed-route");
+        assertThat(result).isEqualTo("option-a");
     }
 
     @Test
     void decisionStepNameShouldBePreserved() {
         ChatClient client = mockClientReturning("opt");
-        Step<String, String> step = Step.named("opt", (ctx, in) -> in);
-
-        java.util.Map<String, Step<?, ?>> options = new java.util.LinkedHashMap<>();
-        options.put("opt", step);
+        Set<String> options = new LinkedHashSet<>(Set.of("opt"));
 
         DecisionStep decision = new DecisionStep("my-router", client, options,
                 DecisionStep.DEFAULT_PROMPT_TEMPLATE);
@@ -155,7 +121,7 @@ class DecisionTest {
     }
 
     @Test
-    void workflowDecisionNodeShouldBeAgentType() {
+    void workflowDecisionShouldProduceExplodedGraph() {
         ChatClient client = mockClientReturning("opt");
         Step<String, String> step = Step.named("opt", (ctx, in) -> in);
 
@@ -165,7 +131,9 @@ class DecisionTest {
                 .end()
                 .compile();
 
-        assertThat(graph.nodes()).hasSize(1);
+        // Exploded: DecisionNode + 1 StepNode + JoinNode = 3
+        assertThat(graph.nodes()).hasSize(3);
+        assertThat(graph.nodes().get(0)).isInstanceOf(WorkflowNode.DecisionNode.class);
         assertThat(graph.nodes().get(0).type())
                 .isEqualTo(io.github.markpollack.harness.patterns.graph.NodeType.AGENT);
     }

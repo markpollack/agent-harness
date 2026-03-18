@@ -1,18 +1,3 @@
-/*
- * Copyright 2024-2026 Mark Pollack
- *
- * Licensed under the Business Source License 1.1 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *      https://mariadb.com/bsl11/
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
 package io.github.markpollack.harness.flows.workflow;
 
 import io.github.markpollack.harness.flows.Step;
@@ -106,7 +91,7 @@ class WorkflowGraphTest {
     }
 
     // -------------------------------------------------------------------------
-    // findNode / edgesFrom
+    // findNode / edgesFrom / nodeByName
     // -------------------------------------------------------------------------
 
     @Test
@@ -143,7 +128,7 @@ class WorkflowGraphTest {
     }
 
     // -------------------------------------------------------------------------
-    // WorkflowNode
+    // WorkflowNode (sealed interface)
     // -------------------------------------------------------------------------
 
     @Test
@@ -152,7 +137,8 @@ class WorkflowGraphTest {
 
         assertThat(node.name()).isEqualTo("fetch");
         assertThat(node.type()).isEqualTo(NodeType.DETERMINISTIC);
-        assertThat(node.step()).isEqualTo(dummyStep);
+        assertThat(node).isInstanceOf(WorkflowNode.StepNode.class);
+        assertThat(((WorkflowNode.StepNode) node).step()).isEqualTo(dummyStep);
     }
 
     @Test
@@ -163,26 +149,26 @@ class WorkflowGraphTest {
     }
 
     // -------------------------------------------------------------------------
-    // WorkflowEdge
+    // WorkflowEdge (EdgeCondition-based)
     // -------------------------------------------------------------------------
 
     @Test
-    void unconditionalEdgeShouldAlwaysMatch() {
+    void unconditionalEdgeShouldBeUnconditional() {
         WorkflowEdge edge = WorkflowEdge.of("a", "b");
 
         assertThat(edge.isUnconditional()).isTrue();
-        assertThat(edge.matches("anything")).isTrue();
-        assertThat(edge.condition()).isNull();
-        assertThat(edge.transform()).isNull();
+        assertThat(edge.condition()).isInstanceOf(EdgeCondition.Unconditional.class);
+        assertThat(edge.label()).isNull();
     }
 
     @Test
-    void conditionalEdgeShouldMatchWhenPredicateTrue() {
-        WorkflowEdge edge = WorkflowEdge.conditional("a", "b", o -> "pass".equals(o));
+    void conditionalEdgeShouldCarryCondition() {
+        WorkflowEdge edge = WorkflowEdge.conditional("a", "b",
+                new EdgeCondition.BooleanGuard(true), "true");
 
         assertThat(edge.isUnconditional()).isFalse();
-        assertThat(edge.matches("pass")).isTrue();
-        assertThat(edge.matches("fail")).isFalse();
+        assertThat(edge.condition()).isEqualTo(new EdgeCondition.BooleanGuard(true));
+        assertThat(edge.label()).isEqualTo("true");
     }
 
     @Test
@@ -191,6 +177,38 @@ class WorkflowGraphTest {
 
         assertThat(edge.label()).isEqualTo("on-success");
         assertThat(edge.isUnconditional()).isTrue();
+    }
+
+    // -------------------------------------------------------------------------
+    // Lookup methods
+    // -------------------------------------------------------------------------
+
+    @Test
+    void unconditionalSuccessorShouldFindSequentialEdge() {
+        WorkflowGraph<String, String> graph = WorkflowGraph.of(
+                "test",
+                List.of(WorkflowNode.deterministic("a", dummyStep),
+                        WorkflowNode.deterministic("b", dummyStep)),
+                List.of(WorkflowEdge.sequence("a", "b")),
+                "a", "b"
+        );
+
+        assertThat(graph.unconditionalSuccessor("a")).isEqualTo("b");
+        assertThat(graph.unconditionalSuccessor("b")).isNull();
+    }
+
+    @Test
+    void hasDirectEdgeShouldReturnCorrectly() {
+        WorkflowGraph<String, String> graph = WorkflowGraph.of(
+                "test",
+                List.of(WorkflowNode.deterministic("a", dummyStep),
+                        WorkflowNode.deterministic("b", dummyStep)),
+                List.of(WorkflowEdge.sequence("a", "b")),
+                "a", "b"
+        );
+
+        assertThat(graph.hasDirectEdge("a", "b")).isTrue();
+        assertThat(graph.hasDirectEdge("b", "a")).isFalse();
     }
 
     // -------------------------------------------------------------------------

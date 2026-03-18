@@ -1,18 +1,3 @@
-/*
- * Copyright 2024-2026 Mark Pollack
- *
- * Licensed under the Business Source License 1.1 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *      https://mariadb.com/bsl11/
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
 package io.github.markpollack.harness.flows.workflow;
 
 import io.github.markpollack.harness.flows.AgentContext;
@@ -23,46 +8,20 @@ import org.springframework.ai.chat.client.ChatClient;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Predicate;
-import java.util.stream.Collectors;
 
 /**
  * The primary developer-facing entry point for composing multi-step workflows.
  * <p>
- * {@code Workflow} provides two surfaces:
- * <ol>
- *   <li><strong>Named factory shortcuts</strong> for common cases — communicate intent from the first word</li>
- *   <li><strong>Full fluent DSL</strong> via {@link #define(String)} for complex flows with gates, branches, and error paths</li>
- * </ol>
- * <p>
- * {@code Workflow} implements {@link Step}, enabling composition without adapters:
- * a workflow can be used as a step inside another workflow or in
- * {@code AgentFlow.parallel()}.
+ * {@code Workflow} implements {@link Step}, enabling composition without adapters.
  *
- * <pre>{@code
- * // Simple sequential
- * Workflow.define("pr-review")
- *     .step(fetchDiff)
- *     .then(analyzeDiff)
- *     .then(postComment)
- *     .run(event);
- *
- * // With branch
- * Workflow.define("review")
- *     .step(analyze)
- *     .branch(output -> isHighRisk(output))
- *         .then(detailedReview)
- *         .otherwise(quickReview)
- *     .run(input);
- * }</pre>
- *
- * @param <I> the workflow input type (first step's input)
- * @param <O> the workflow output type (last step's output)
+ * @param <I> the workflow input type
+ * @param <O> the workflow output type
  */
 public final class Workflow<I, O> implements Step<I, O> {
 
@@ -82,11 +41,6 @@ public final class Workflow<I, O> implements Step<I, O> {
         return new WorkflowExecutor().execute(graph, ctx, input);
     }
 
-    /**
-     * Returns the compiled workflow graph (the IR).
-     *
-     * @return the workflow graph
-     */
     public WorkflowGraph<I, O> graph() {
         return graph;
     }
@@ -95,16 +49,6 @@ public final class Workflow<I, O> implements Step<I, O> {
     // Entry points
     // -------------------------------------------------------------------------
 
-    /**
-     * Starts building a workflow with the given name.
-     * <p>
-     * The name appears in traces, errors, and visualization.
-     *
-     * @param name the workflow identifier
-     * @param <I>  input type
-     * @param <O>  output type
-     * @return a new WorkflowBuilder
-     */
     public static <I, O> WorkflowBuilder<I, O> define(String name) {
         return new WorkflowBuilder<>(name);
     }
@@ -113,15 +57,6 @@ public final class Workflow<I, O> implements Step<I, O> {
     // WorkflowBuilder
     // -------------------------------------------------------------------------
 
-    /**
-     * Fluent builder for constructing workflows.
-     * <p>
-     * The builder only builds a {@link WorkflowGraph} — it never executes.
-     * {@link #run(Object)} is the only execution point.
-     *
-     * @param <I> input type
-     * @param <O> output type
-     */
     public static final class WorkflowBuilder<I, O> {
 
         private final String name;
@@ -129,342 +64,277 @@ public final class Workflow<I, O> implements Step<I, O> {
         private final List<WorkflowEdge> edges = new ArrayList<>();
         private String lastNodeName;
         private final AtomicInteger nodeCounter = new AtomicInteger(0);
+        // Recovery nodes from onError() that need wiring to the next step
+        private final List<String> pendingConvergence = new ArrayList<>();
 
         private WorkflowBuilder(String name) {
             this.name = Objects.requireNonNull(name, "name must not be null");
         }
 
-        /**
-         * Appends a step to the workflow.
-         *
-         * @param step the step to add
-         * @return this builder
-         */
         public WorkflowBuilder<I, O> step(Step<?, ?> step) {
             String nodeName = uniqueNodeName(step.name());
-            nodes.add(new WorkflowNode(nodeName, detectNodeType(step), step));
+            nodes.add(new WorkflowNode.StepNode(nodeName, detectNodeType(step), step));
+
             if (lastNodeName != null) {
-                edges.add(WorkflowEdge.of(lastNodeName, nodeName));
+                edges.add(WorkflowEdge.sequence(lastNodeName, nodeName));
             }
+            // Wire pending convergence nodes (from onError recovery) to this node
+            for (String pending : pendingConvergence) {
+                edges.add(WorkflowEdge.sequence(pending, nodeName));
+            }
+            pendingConvergence.clear();
+
             lastNodeName = nodeName;
             return this;
         }
 
-        /**
-         * Readability alias for {@link #step(Step)}.
-         *
-         * @param step the step to add
-         * @return this builder
-         */
         public WorkflowBuilder<I, O> then(Step<?, ?> step) {
             return step(step);
         }
 
-        /**
-         * Adds concurrent fan-out steps with implicit AND join.
-         * <p>
-         * All steps receive the same input (the output of the previous step).
-         * Results are collected into a {@code List<?>} and passed to the next step.
-         *
-         * @param steps the steps to run in parallel
-         * @return this builder
-         */
+        // -- Parallel (exploded: ForkNode + N StepNodes + JoinNode) --
+
         @SafeVarargs
         public final WorkflowBuilder<I, O> parallel(Step<?, ?>... steps) {
             if (steps.length == 0) {
                 throw new IllegalArgumentException("parallel requires at least one step");
             }
 
-            // Create a synthetic parallel step that fans out and joins
-            String parallelName = "parallel-" + nodeCounter.incrementAndGet();
-            Step<Object, List<Object>> parallelStep = Step.named(parallelName, (ctx, input) -> {
-                List<CompletableFuture<Object>> futures = new ArrayList<>();
-                for (Step<?, ?> s : steps) {
-                    @SuppressWarnings({"unchecked", "rawtypes"})
-                    Step<Object, Object> typedStep = (Step) s;
-                    futures.add(CompletableFuture.supplyAsync(() -> typedStep.execute(ctx, input)));
-                }
-                return futures.stream()
-                        .map(CompletableFuture::join)
-                        .collect(Collectors.toList());
-            });
+            int seq = nodeCounter.incrementAndGet();
+            String forkName = "fork-" + seq;
+            String joinName = "join-" + seq;
 
-            String nodeName = parallelName;
-            nodes.add(new WorkflowNode(nodeName, NodeType.DETERMINISTIC, parallelStep));
+            nodes.add(new WorkflowNode.ForkNode(forkName));
             if (lastNodeName != null) {
-                edges.add(WorkflowEdge.of(lastNodeName, nodeName));
+                edges.add(WorkflowEdge.sequence(lastNodeName, forkName));
             }
-            lastNodeName = nodeName;
+
+            for (int i = 0; i < steps.length; i++) {
+                Step<?, ?> s = steps[i];
+                String branchNodeName = uniqueNodeName(s.name());
+                nodes.add(new WorkflowNode.StepNode(branchNodeName, detectNodeType(s), s));
+                edges.add(WorkflowEdge.conditional(forkName, branchNodeName,
+                        new EdgeCondition.BranchIndex(i), "branch-" + i));
+                edges.add(WorkflowEdge.sequence(branchNodeName, joinName));
+            }
+
+            nodes.add(new WorkflowNode.JoinNode(joinName));
+            lastNodeName = joinName;
             return this;
         }
 
-        /**
-         * Opens a repeat-until loop.
-         * <p>
-         * The predicate operates on the {@link AgentContext}, not the step output.
-         * This gives access to iteration count, accumulated cost, and other framework
-         * metadata — which is what loop termination typically depends on.
-         * <p>
-         * Compare with {@link #branch(Predicate)} which operates on the step output,
-         * because branch routing depends on what the previous step produced.
-         *
-         * @param predicate the loop termination condition (returns true to exit)
-         * @return a LoopBuilder for adding the loop body
-         */
+        // -- RepeatUntil (while-do: LoopEntryNode + body StepNodes + LoopExitNode) --
+
         public LoopBuilder<I, O> repeatUntil(Predicate<AgentContext> predicate) {
-            return new LoopBuilder<>(this, predicate);
+            return new LoopBuilder<>(this, predicate, null);
         }
 
-        /**
-         * Opens an LLM-driven routing decision.
-         * <p>
-         * The routing LLM receives the current input and a list of named options,
-         * then chooses one option name. The chosen option's step is executed.
-         * <p>
-         * Use when the next step should be chosen by the agent at runtime, not by
-         * a deterministic predicate. For deterministic routing, prefer {@link #branch(Predicate)}.
-         *
-         * <pre>{@code
-         * .step(analyzeIssue)
-         * .decision(routingClient)
-         *     .option("fix-code", applyFix)
-         *     .option("add-test", addTest)
-         *     .option("escalate", notifyHuman)
-         * .end()
-         * }</pre>
-         *
-         * @param routingClient the ChatClient used to choose the option
-         * @return a DecisionBuilder for registering named options
-         */
+        // -- RepeatUntilOutput (do-while: body StepNodes + LoopCheckNode + LoopExitNode) --
+
+        public LoopBuilder<I, O> repeatUntilOutput(Predicate<Object> outputPredicate) {
+            return new LoopBuilder<>(this, null, outputPredicate);
+        }
+
+        // -- Decision (exploded: DecisionNode + N StepNodes + JoinNode) --
+
         public DecisionBuilder<I, O> decision(ChatClient routingClient) {
             return new DecisionBuilder<>(this, routingClient);
         }
 
-        /**
-         * Opens a deterministic conditional branch.
-         * <p>
-         * The predicate operates on the output of the previous step (as {@code Object}).
-         * Use explicit parameter types in the lambda for clarity:
-         * <pre>{@code
-         * .branch(output -> ((ReviewReport) output).isHighRisk())
-         * }</pre>
-         * <p>
-         * Compare with {@link #repeatUntil(Predicate)} which operates on
-         * {@link AgentContext}, because loop termination depends on framework
-         * metadata (iteration count, cost), not step output.
-         *
-         * @param predicate the branch condition (true = then branch, false = otherwise)
-         * @return a BranchBuilder for specifying then/otherwise steps
-         */
+        // -- Branch (exploded: GatewayNode + 2 StepNodes + JoinNode) --
+
         public BranchBuilder<I, O> branch(Predicate<Object> predicate) {
             return new BranchBuilder<>(this, predicate);
         }
 
-        /**
-         * Attaches an error handler to the most recently added step.
-         * <p>
-         * When the step throws an exception matching {@code exceptionType},
-         * execution routes to {@code recoveryStep} instead of propagating.
-         * Error edges are visible in traces and Markov analysis.
-         *
-         * <pre>{@code
-         * .step(callApi)
-         *     .onError(TimeoutException.class, retryWithBackoff)
-         *     .onError(RateLimitException.class, waitAndRetry)
-         * }</pre>
-         *
-         * @param exceptionType the exception class to catch
-         * @param recoveryStep  the step to route to on error
-         * @return this builder
-         */
+        // -- OnError --
+
         public WorkflowBuilder<I, O> onError(Class<? extends Exception> exceptionType, Step<?, ?> recoveryStep) {
             if (lastNodeName == null) {
                 throw new IllegalStateException("onError requires a preceding step");
             }
             String recoveryName = uniqueNodeName(recoveryStep.name());
-            nodes.add(new WorkflowNode(recoveryName, detectNodeType(recoveryStep), recoveryStep));
-            edges.add(new WorkflowEdge(
-                    lastNodeName, recoveryName, null, null,
-                    "error:" + exceptionType.getName()
-            ));
+            nodes.add(new WorkflowNode.StepNode(recoveryName, detectNodeType(recoveryStep), recoveryStep));
+            edges.add(WorkflowEdge.conditional(lastNodeName, recoveryName,
+                    new EdgeCondition.ErrorMatch(exceptionType),
+                    "error:" + exceptionType.getName()));
+            pendingConvergence.add(recoveryName);
             return this;
         }
 
-        /**
-         * Compiles the workflow definition into a {@link WorkflowGraph}.
-         * <p>
-         * No execution occurs — the graph is a pure data structure.
-         *
-         * @return the compiled workflow graph
-         */
+        // -- Compile / Run / Build --
+
         public WorkflowGraph<I, O> compile() {
             if (nodes.isEmpty()) {
                 throw new IllegalStateException("Workflow '" + name + "' has no steps");
             }
             String startNode = nodes.get(0).name();
-            String finishNode = nodes.get(nodes.size() - 1).name();
+            String finishNode = lastNodeName != null ? lastNodeName : startNode;
             return WorkflowGraph.of(name, List.copyOf(nodes), List.copyOf(edges), startNode, finishNode);
         }
 
-        /**
-         * Compiles and executes the workflow with the given input.
-         *
-         * @param input the workflow input
-         * @return the workflow output
-         */
         public O run(I input) {
             WorkflowGraph<I, O> graph = compile();
             return new WorkflowExecutor().execute(graph, AgentContext.create(), input);
         }
 
-        /**
-         * Compiles and executes the workflow with the given input and constraints.
-         *
-         * @param input   the workflow input
-         * @param options runtime constraints (cost cap, iteration cap, duration cap)
-         * @return the workflow output
-         */
         public O run(I input, RunOptions options) {
             WorkflowGraph<I, O> graph = compile();
             return new WorkflowExecutor().execute(graph, AgentContext.create(), input, options);
         }
 
-        /**
-         * Compiles and returns a {@link Workflow} that implements {@link Step}.
-         * <p>
-         * Use when you need the workflow as a composable Step:
-         * <pre>{@code
-         * Workflow<String, String> subWorkflow = Workflow.define("sub").step(a).build();
-         * Workflow.define("outer").step(subWorkflow).run(input);
-         * }</pre>
-         *
-         * @return a Workflow implementing Step
-         */
         public Workflow<I, O> build() {
             return new Workflow<>(compile());
         }
 
-        // Internal helpers
+        // -- Internal helpers --
 
-        private String uniqueNodeName(String baseName) {
+        String uniqueNodeName(String baseName) {
             return baseName + "-" + nodeCounter.incrementAndGet();
         }
 
-        private NodeType detectNodeType(Step<?, ?> step) {
+        NodeType detectNodeType(Step<?, ?> step) {
             return (step instanceof AgentStep) ? NodeType.AGENT : NodeType.DETERMINISTIC;
         }
 
-        // Package-private for sub-builders
-        void addNode(WorkflowNode node) {
-            nodes.add(node);
-        }
-
-        void addEdge(WorkflowEdge edge) {
-            edges.add(edge);
-        }
-
-        String lastNodeName() {
-            return lastNodeName;
-        }
-
-        void setLastNodeName(String name) {
-            this.lastNodeName = name;
-        }
-
-        String nextNodeName(String baseName) {
-            return uniqueNodeName(baseName);
-        }
-
-        NodeType detectType(Step<?, ?> step) {
-            return detectNodeType(step);
-        }
+        void addNode(WorkflowNode node) { nodes.add(node); }
+        void addEdge(WorkflowEdge edge) { edges.add(edge); }
+        String lastNodeName() { return lastNodeName; }
+        void setLastNodeName(String name) { this.lastNodeName = name; }
+        AtomicInteger nodeCounter() { return nodeCounter; }
     }
 
     // -------------------------------------------------------------------------
     // LoopBuilder
     // -------------------------------------------------------------------------
 
-    /**
-     * Builder for repeat-until loops within a workflow.
-     *
-     * @param <I> workflow input type
-     * @param <O> workflow output type
-     */
     public static final class LoopBuilder<I, O> {
 
         private final WorkflowBuilder<I, O> parent;
-        private final Predicate<AgentContext> exitCondition;
+        private final Predicate<AgentContext> contextExitCondition;  // while-do
+        private final Predicate<Object> outputExitCondition;         // do-while
         private final List<Step<?, ?>> bodySteps = new ArrayList<>();
 
-        private LoopBuilder(WorkflowBuilder<I, O> parent, Predicate<AgentContext> exitCondition) {
+        private LoopBuilder(WorkflowBuilder<I, O> parent,
+                            Predicate<AgentContext> contextExitCondition,
+                            Predicate<Object> outputExitCondition) {
             this.parent = parent;
-            this.exitCondition = exitCondition;
+            this.contextExitCondition = contextExitCondition;
+            this.outputExitCondition = outputExitCondition;
         }
 
-        /**
-         * Adds a step to the loop body.
-         *
-         * @param step the step to repeat
-         * @return this loop builder
-         */
         public LoopBuilder<I, O> step(Step<?, ?> step) {
             bodySteps.add(step);
             return this;
         }
 
-        /**
-         * Closes the loop and returns to the outer workflow builder.
-         *
-         * @return the parent workflow builder
-         */
-        @SuppressWarnings({"unchecked", "rawtypes"})
+        public LoopBuilder<I, O> then(Step<?, ?> step) {
+            return step(step);
+        }
+
         public WorkflowBuilder<I, O> end() {
             if (bodySteps.isEmpty()) {
                 throw new IllegalStateException("Loop body requires at least one step");
             }
 
-            // Create a synthetic loop step
-            String loopName = "loop-" + parent.nodeCounter.incrementAndGet();
-            Step<Object, Object> loopStep = Step.named(loopName, (ctx, input) -> {
-                Object current = input;
-                int iteration = 0;
-                while (true) {
-                    AgentContext iterCtx = ctx.mutate()
-                            .with(AgentContext.ITERATION_COUNT, iteration)
-                            .build();
-                    if (exitCondition.test(iterCtx)) {
-                        return current;
-                    }
-                    for (Step bodyStep : bodySteps) {
-                        current = bodyStep.execute(iterCtx, current);
-                    }
-                    iteration++;
-                    if (iteration > 1000) {
-                        throw new IllegalStateException("Loop '" + loopName + "' exceeded 1000 iterations");
-                    }
-                }
-            });
+            int seq = parent.nodeCounter().incrementAndGet();
 
-            WorkflowNode node = new WorkflowNode(loopName, NodeType.DETERMINISTIC, loopStep);
-            parent.addNode(node);
-            if (parent.lastNodeName() != null) {
-                parent.addEdge(WorkflowEdge.of(parent.lastNodeName(), loopName));
+            if (contextExitCondition != null) {
+                // While-do: LoopEntryNode → body → back to entry; entry → exit on done
+                return buildWhileDo(seq);
+            } else {
+                // Do-while: body → LoopCheckNode → back to body; check → exit on done
+                return buildDoWhile(seq);
             }
-            parent.setLastNodeName(loopName);
+        }
+
+        private WorkflowBuilder<I, O> buildWhileDo(int seq) {
+            String entryName = "loop-entry-" + seq;
+            String exitName = "loop-exit-" + seq;
+
+            parent.addNode(new WorkflowNode.LoopEntryNode(entryName, contextExitCondition));
+            if (parent.lastNodeName() != null) {
+                parent.addEdge(WorkflowEdge.sequence(parent.lastNodeName(), entryName));
+            }
+
+            // Body steps
+            String prevName = entryName;
+            String firstBodyName = null;
+            String lastBodyName = null;
+            for (Step<?, ?> bodyStep : bodySteps) {
+                String bodyNodeName = parent.uniqueNodeName(bodyStep.name());
+                parent.addNode(new WorkflowNode.StepNode(bodyNodeName,
+                        parent.detectNodeType(bodyStep), bodyStep));
+                if (prevName.equals(entryName)) {
+                    // Entry → first body (LoopContinue)
+                    parent.addEdge(WorkflowEdge.conditional(entryName, bodyNodeName,
+                            new EdgeCondition.LoopContinue(), "continue"));
+                    firstBodyName = bodyNodeName;
+                } else {
+                    parent.addEdge(WorkflowEdge.sequence(prevName, bodyNodeName));
+                }
+                prevName = bodyNodeName;
+                lastBodyName = bodyNodeName;
+            }
+
+            // Back-edge: last body → entry
+            parent.addEdge(WorkflowEdge.sequence(lastBodyName, entryName));
+
+            // Exit edge: entry → exit (LoopExit)
+            parent.addNode(new WorkflowNode.LoopExitNode(exitName));
+            parent.addEdge(WorkflowEdge.conditional(entryName, exitName,
+                    new EdgeCondition.LoopExit(), "exit"));
+
+            parent.setLastNodeName(exitName);
+            return parent;
+        }
+
+        private WorkflowBuilder<I, O> buildDoWhile(int seq) {
+            String checkName = "loop-check-" + seq;
+            String exitName = "loop-exit-" + seq;
+
+            // Body steps
+            String firstBodyName = null;
+            String prevName = null;
+            String lastBodyName = null;
+            for (Step<?, ?> bodyStep : bodySteps) {
+                String bodyNodeName = parent.uniqueNodeName(bodyStep.name());
+                parent.addNode(new WorkflowNode.StepNode(bodyNodeName,
+                        parent.detectNodeType(bodyStep), bodyStep));
+                if (firstBodyName == null) {
+                    firstBodyName = bodyNodeName;
+                    if (parent.lastNodeName() != null) {
+                        parent.addEdge(WorkflowEdge.sequence(parent.lastNodeName(), bodyNodeName));
+                    }
+                } else {
+                    parent.addEdge(WorkflowEdge.sequence(prevName, bodyNodeName));
+                }
+                prevName = bodyNodeName;
+                lastBodyName = bodyNodeName;
+            }
+
+            // Check node after body
+            parent.addNode(new WorkflowNode.LoopCheckNode(checkName, outputExitCondition));
+            parent.addEdge(WorkflowEdge.sequence(lastBodyName, checkName));
+
+            // Back-edge: check → first body (LoopContinue)
+            parent.addEdge(WorkflowEdge.conditional(checkName, firstBodyName,
+                    new EdgeCondition.LoopContinue(), "continue"));
+
+            // Exit edge: check → exit (LoopExit)
+            parent.addNode(new WorkflowNode.LoopExitNode(exitName));
+            parent.addEdge(WorkflowEdge.conditional(checkName, exitName,
+                    new EdgeCondition.LoopExit(), "exit"));
+
+            parent.setLastNodeName(exitName);
             return parent;
         }
     }
 
     // -------------------------------------------------------------------------
-    // BranchBuilder
+    // BranchBuilder (exploded: GatewayNode + 2 StepNodes + JoinNode)
     // -------------------------------------------------------------------------
 
-    /**
-     * Builder for deterministic conditional branches.
-     *
-     * @param <I> workflow input type
-     * @param <O> workflow output type
-     */
     public static final class BranchBuilder<I, O> {
 
         private final WorkflowBuilder<I, O> parent;
@@ -476,65 +346,51 @@ public final class Workflow<I, O> implements Step<I, O> {
             this.predicate = predicate;
         }
 
-        /**
-         * Specifies the step to execute when the condition is true.
-         *
-         * @param step the true-branch step
-         * @return this branch builder
-         */
         public BranchBuilder<I, O> then(Step<?, ?> step) {
             this.thenStep = step;
             return this;
         }
 
-        /**
-         * Specifies the step to execute when the condition is false,
-         * closes the branch, and returns to the outer builder.
-         *
-         * @param step the false-branch step
-         * @return the parent workflow builder
-         */
-        @SuppressWarnings({"unchecked", "rawtypes"})
         public WorkflowBuilder<I, O> otherwise(Step<?, ?> step) {
             if (thenStep == null) {
                 throw new IllegalStateException("branch().then() must be called before otherwise()");
             }
 
-            // Create a synthetic branch step
-            String branchName = "branch-" + parent.nodeCounter.incrementAndGet();
-            Step<Object, Object> thenTyped = (Step) thenStep;
-            Step<Object, Object> otherwiseTyped = (Step) step;
+            int seq = parent.nodeCounter().incrementAndGet();
+            String gwName = "gateway-" + seq;
+            String thenName = parent.uniqueNodeName(thenStep.name());
+            String elseName = parent.uniqueNodeName(step.name());
+            String joinName = "join-" + seq;
 
-            Step<Object, Object> branchStep = Step.named(branchName, (ctx, input) -> {
-                if (predicate.test(input)) {
-                    return thenTyped.execute(ctx, input);
-                } else {
-                    return otherwiseTyped.execute(ctx, input);
-                }
-            });
-
-            WorkflowNode node = new WorkflowNode(branchName, NodeType.DETERMINISTIC, branchStep);
-            parent.addNode(node);
+            parent.addNode(new WorkflowNode.GatewayNode(gwName, predicate));
             if (parent.lastNodeName() != null) {
-                parent.addEdge(WorkflowEdge.of(parent.lastNodeName(), branchName));
+                parent.addEdge(WorkflowEdge.sequence(parent.lastNodeName(), gwName));
             }
-            parent.setLastNodeName(branchName);
+
+            // Then branch
+            parent.addNode(new WorkflowNode.StepNode(thenName,
+                    parent.detectNodeType(thenStep), thenStep));
+            parent.addEdge(WorkflowEdge.conditional(gwName, thenName,
+                    new EdgeCondition.BooleanGuard(true), "true"));
+            parent.addEdge(WorkflowEdge.sequence(thenName, joinName));
+
+            // Otherwise branch
+            parent.addNode(new WorkflowNode.StepNode(elseName,
+                    parent.detectNodeType(step), step));
+            parent.addEdge(WorkflowEdge.conditional(gwName, elseName,
+                    new EdgeCondition.BooleanGuard(false), "false"));
+            parent.addEdge(WorkflowEdge.sequence(elseName, joinName));
+
+            parent.addNode(new WorkflowNode.JoinNode(joinName));
+            parent.setLastNodeName(joinName);
             return parent;
         }
     }
 
     // -------------------------------------------------------------------------
-    // DecisionBuilder
+    // DecisionBuilder (exploded: DecisionNode + N StepNodes + JoinNode)
     // -------------------------------------------------------------------------
 
-    /**
-     * Builder for LLM-driven routing decisions within a workflow.
-     * <p>
-     * The routing LLM selects one named option at runtime based on the current input.
-     *
-     * @param <I> workflow input type
-     * @param <O> workflow output type
-     */
     public static final class DecisionBuilder<I, O> {
 
         private final WorkflowBuilder<I, O> parent;
@@ -543,19 +399,12 @@ public final class Workflow<I, O> implements Step<I, O> {
 
         private DecisionBuilder(WorkflowBuilder<I, O> parent, ChatClient routingClient) {
             this.parent = parent;
-            this.routingClient = Objects.requireNonNull(routingClient, "routingClient must not be null");
+            this.routingClient = Objects.requireNonNull(routingClient);
         }
 
-        /**
-         * Registers a named option that the LLM can choose.
-         *
-         * @param name the option name (used in the routing prompt)
-         * @param step the step to execute when this option is chosen
-         * @return this decision builder
-         */
         public DecisionBuilder<I, O> option(String name, Step<?, ?> step) {
-            Objects.requireNonNull(name, "option name must not be null");
-            Objects.requireNonNull(step, "option step must not be null");
+            Objects.requireNonNull(name);
+            Objects.requireNonNull(step);
             if (options.containsKey(name)) {
                 throw new IllegalArgumentException("Duplicate decision option name: '" + name + "'");
             }
@@ -563,30 +412,38 @@ public final class Workflow<I, O> implements Step<I, O> {
             return this;
         }
 
-        /**
-         * Closes the decision block and returns to the outer workflow builder.
-         * <p>
-         * Creates a single synthetic node in the graph that calls the routing LLM
-         * and dispatches to the chosen option's step.
-         *
-         * @return the parent workflow builder
-         * @throws IllegalStateException if no options have been registered
-         */
         public WorkflowBuilder<I, O> end() {
             if (options.isEmpty()) {
                 throw new IllegalStateException("decision() requires at least one .option()");
             }
 
-            String decisionName = "decision-" + parent.nodeCounter.incrementAndGet();
-            DecisionStep decisionStep = new DecisionStep(
-                    decisionName, routingClient, options, DecisionStep.DEFAULT_PROMPT_TEMPLATE);
+            int seq = parent.nodeCounter().incrementAndGet();
+            String decisionName = "decision-" + seq;
+            String joinName = "join-" + seq;
 
-            WorkflowNode node = new WorkflowNode(decisionName, NodeType.AGENT, decisionStep);
-            parent.addNode(node);
+            DecisionStep routingStep = new DecisionStep(
+                    decisionName, routingClient,
+                    new LinkedHashSet<>(options.keySet()),
+                    DecisionStep.DEFAULT_PROMPT_TEMPLATE);
+
+            parent.addNode(new WorkflowNode.DecisionNode(decisionName, routingStep));
             if (parent.lastNodeName() != null) {
-                parent.addEdge(WorkflowEdge.of(parent.lastNodeName(), decisionName));
+                parent.addEdge(WorkflowEdge.sequence(parent.lastNodeName(), decisionName));
             }
-            parent.setLastNodeName(decisionName);
+
+            for (Map.Entry<String, Step<?, ?>> entry : options.entrySet()) {
+                String optionLabel = entry.getKey();
+                Step<?, ?> optionStep = entry.getValue();
+                String optionNodeName = parent.uniqueNodeName(optionStep.name());
+                parent.addNode(new WorkflowNode.StepNode(optionNodeName,
+                        parent.detectNodeType(optionStep), optionStep));
+                parent.addEdge(WorkflowEdge.conditional(decisionName, optionNodeName,
+                        new EdgeCondition.OptionMatch(optionLabel), optionLabel));
+                parent.addEdge(WorkflowEdge.sequence(optionNodeName, joinName));
+            }
+
+            parent.addNode(new WorkflowNode.JoinNode(joinName));
+            parent.setLastNodeName(joinName);
             return parent;
         }
     }

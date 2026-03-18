@@ -1,112 +1,76 @@
-/*
- * Copyright 2024-2026 Mark Pollack
- *
- * Licensed under the Business Source License 1.1 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *      https://mariadb.com/bsl11/
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
 package io.github.markpollack.harness.flows.workflow;
 
 import io.github.markpollack.harness.flows.AgentContext;
+import io.github.markpollack.harness.flows.ContextKey;
 import io.github.markpollack.harness.flows.Step;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.stream.Collectors;
 
 /**
- * The runtime layer that executes a {@link WorkflowGraph}.
+ * Graph walker that executes a {@link WorkflowGraph} using Java 21 pattern matching switch.
  * <p>
- * Dispatches each step, follows edges based on conditions, enforces
- * {@link RunOptions} constraints, and records every transition via
- * {@link TraceRecorder}.
+ * Each {@link WorkflowNode} variant has its own handler. The executor dispatches steps
+ * through a {@link PartitionHandler} and records transitions via {@link TraceRecorder}.
  */
 public class WorkflowExecutor {
 
     private static final Logger logger = LoggerFactory.getLogger(WorkflowExecutor.class);
-
     private static final int DEFAULT_MAX_ITERATIONS = 1000;
 
     private final PartitionHandler partitionHandler;
     private final TraceRecorder traceRecorder;
+    private final ExecutorService parallelExecutor;
 
-    /**
-     * Creates an executor with a PartitionHandler and TraceRecorder.
-     *
-     * @param partitionHandler the substrate handler for step dispatch
-     * @param traceRecorder    the recorder for step transitions
-     */
-    public WorkflowExecutor(PartitionHandler partitionHandler, TraceRecorder traceRecorder) {
+    public WorkflowExecutor(PartitionHandler partitionHandler, TraceRecorder traceRecorder,
+                            ExecutorService parallelExecutor) {
         this.partitionHandler = partitionHandler != null ? partitionHandler : new LocalPartitionHandler();
         this.traceRecorder = traceRecorder != null ? traceRecorder : TraceRecorder.noop();
+        this.parallelExecutor = parallelExecutor != null ? parallelExecutor :
+                Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 2);
     }
 
-    /**
-     * Creates an executor with a TraceRecorder and default local handler.
-     *
-     * @param traceRecorder the recorder for step transitions
-     */
+    public WorkflowExecutor(PartitionHandler partitionHandler, TraceRecorder traceRecorder) {
+        this(partitionHandler, traceRecorder, null);
+    }
+
     public WorkflowExecutor(TraceRecorder traceRecorder) {
-        this(new LocalPartitionHandler(), traceRecorder);
+        this(new LocalPartitionHandler(), traceRecorder, null);
     }
 
-    /**
-     * Creates an executor with defaults (local handler, no-op tracing).
-     */
     public WorkflowExecutor() {
-        this(new LocalPartitionHandler(), TraceRecorder.noop());
+        this(new LocalPartitionHandler(), TraceRecorder.noop(), null);
     }
 
-    /**
-     * Returns the partition handler used by this executor.
-     *
-     * @return the partition handler
-     */
-    public PartitionHandler partitionHandler() {
-        return partitionHandler;
-    }
+    public PartitionHandler partitionHandler() { return partitionHandler; }
+    public TraceRecorder traceRecorder() { return traceRecorder; }
 
-    /**
-     * Returns the trace recorder used by this executor.
-     *
-     * @return the trace recorder
-     */
-    public TraceRecorder traceRecorder() {
-        return traceRecorder;
-    }
-
-    /**
-     * Executes a workflow graph with the given context and input.
-     *
-     * @param graph   the compiled workflow graph
-     * @param ctx     the execution context
-     * @param input   the workflow input
-     * @param options runtime constraints (may be null for no constraints)
-     * @param <I>     input type
-     * @param <O>     output type
-     * @return the workflow output
-     */
     @SuppressWarnings({"unchecked", "rawtypes"})
     public <I, O> O execute(WorkflowGraph<I, O> graph, AgentContext ctx, I input, RunOptions options) {
         int maxIterations = (options != null && options.maxIterations() > 0)
-                ? options.maxIterations()
-                : DEFAULT_MAX_ITERATIONS;
+                ? options.maxIterations() : DEFAULT_MAX_ITERATIONS;
 
         String runId = ctx.runId();
         String currentNodeName = graph.startNode();
-        Object currentInput = input;
+        Object currentValue = input;
         int iterations = 0;
         String previousNodeName = null;
+
+        // Per-loop iteration counters: "loop.<nodeName>.iteration" → count
+        Map<String, Integer> loopCounters = new HashMap<>();
+        // Pending fork futures: forkNodeName → ordered branch futures
+        Map<String, List<Future<Object>>> pendingForks = new HashMap<>();
 
         logger.debug("Starting workflow '{}' at node '{}'", graph.name(), currentNodeName);
 
@@ -116,124 +80,261 @@ public class WorkflowExecutor {
                         "Workflow '" + graph.name() + "' exceeded max iterations: " + maxIterations);
             }
 
-            String nodeName = currentNodeName;
-            WorkflowNode node = graph.findNode(nodeName)
-                    .orElseThrow(() -> new IllegalStateException(
-                            "Workflow '" + graph.name() + "': node '" + nodeName + "' not found"));
+            WorkflowNode node = graph.nodeByName(currentNodeName);
+            logger.debug("Processing node '{}' [{}] (iteration {})", node.name(), node.getClass().getSimpleName(), iterations);
 
-            logger.debug("Executing node '{}' (iteration {})", node.name(), iterations);
+            switch (node) {
 
-            // Execute the step through PartitionHandler and record the transition
-            Instant stepStart = Instant.now();
-            Object output;
-            try {
-                Step step = node.step();
-                output = partitionHandler.execute(step, ctx, currentInput);
-            } catch (WorkflowTerminatedException e) {
-                Duration stepDuration = Duration.between(stepStart, Instant.now());
-                recordTransition(runId, graph.name(), previousNodeName, node.name(),
-                        stepDuration, 0L, 0.0, node.type());
-                logger.info("Workflow '{}' terminated at node '{}': {} - {}",
-                        graph.name(), node.name(), e.status(), e.getMessage());
-                return null;
-            } catch (Exception e) {
-                Duration stepDuration = Duration.between(stepStart, Instant.now());
-                recordTransition(runId, graph.name(), previousNodeName, node.name(),
-                        stepDuration, 0L, 0.0, node.type());
+                case WorkflowNode.StepNode sn -> {
+                    Instant stepStart = Instant.now();
+                    Object output;
+                    try {
+                        Step step = sn.step();
+                        output = partitionHandler.execute(step, ctx, currentValue);
+                    } catch (WorkflowTerminatedException e) {
+                        recordTransition(runId, graph.name(), previousNodeName, sn.name(),
+                                Duration.between(stepStart, Instant.now()), 0L, 0.0, sn.type(), null);
+                        logger.info("Workflow '{}' terminated at '{}': {} - {}",
+                                graph.name(), sn.name(), e.status(), e.getMessage());
+                        return null;
+                    } catch (Exception e) {
+                        Duration dur = Duration.between(stepStart, Instant.now());
+                        recordTransition(runId, graph.name(), previousNodeName, sn.name(),
+                                dur, 0L, 0.0, sn.type(), null);
+                        // Check for error edges
+                        WorkflowEdge errorEdge = graph.errorEdge(currentNodeName, e);
+                        if (errorEdge != null) {
+                            logger.debug("Error in '{}', routing to '{}'", currentNodeName, errorEdge.to());
+                            previousNodeName = currentNodeName;
+                            currentNodeName = errorEdge.to();
+                            continue;
+                        }
+                        throw e;
+                    }
+                    recordTransition(runId, graph.name(), previousNodeName, sn.name(),
+                            Duration.between(stepStart, Instant.now()), 0L, 0.0, sn.type(), null);
+                    currentValue = output;
 
-                WorkflowEdge errorEdge = findErrorEdge(graph, currentNodeName, e);
-                if (errorEdge != null) {
-                    logger.debug("Error in node '{}', routing via error edge to '{}'",
-                            currentNodeName, errorEdge.to());
+                    // Advance to next node
                     previousNodeName = currentNodeName;
-                    currentNodeName = errorEdge.to();
-                    continue;
+                    String next = findNonErrorSuccessor(graph, currentNodeName);
+                    if (next == null) {
+                        // Terminal node (finish or only-error-edges)
+                        return (O) currentValue;
+                    }
+                    currentNodeName = next;
                 }
-                throw e;
-            }
 
-            Duration stepDuration = Duration.between(stepStart, Instant.now());
-            recordTransition(runId, graph.name(), previousNodeName, node.name(),
-                    stepDuration, 0L, 0.0, node.type());
+                case WorkflowNode.GatewayNode gn -> {
+                    Instant start = Instant.now();
+                    boolean result = gn.predicate().test(currentValue);
+                    recordTransition(runId, graph.name(), previousNodeName, gn.name(),
+                            Duration.between(start, Instant.now()), 0L, 0.0, gn.type(),
+                            result ? "true" : "false");
+                    // currentValue passes through unchanged
+                    previousNodeName = currentNodeName;
+                    // Follow BooleanGuard edge matching the result
+                    EdgeCondition target = new EdgeCondition.BooleanGuard(result);
+                    currentNodeName = findEdgeByCondition(graph, gn.name(), target);
+                }
 
-            // Check if we're at the finish node
-            if (currentNodeName.equals(graph.finishNode())) {
-                logger.debug("Workflow '{}' completed at finish node '{}'", graph.name(), currentNodeName);
-                return (O) output;
-            }
+                case WorkflowNode.DecisionNode dn -> {
+                    Instant start = Instant.now();
+                    Step routingStep = dn.routingStep();
+                    Object chosenLabel = partitionHandler.execute(routingStep, ctx, currentValue);
+                    String chosen = chosenLabel.toString().strip();
+                    recordTransition(runId, graph.name(), previousNodeName, dn.name(),
+                            Duration.between(start, Instant.now()), 0L, 0.0, dn.type(), chosen);
+                    // Follow OptionMatch edge
+                    previousNodeName = currentNodeName;
+                    EdgeCondition target = new EdgeCondition.OptionMatch(chosen);
+                    currentNodeName = findEdgeByCondition(graph, dn.name(), target);
+                }
 
-            // Find next edge — skip error edges (they are only taken via the exception path)
-            List<WorkflowEdge> outgoing = graph.edgesFrom(currentNodeName);
-            List<WorkflowEdge> normalEdges = outgoing.stream()
-                    .filter(e -> e.label() == null || !e.label().startsWith("error:"))
-                    .toList();
+                case WorkflowNode.LoopEntryNode le -> {
+                    // Increment per-loop counter
+                    String loopKey = "loop." + le.name() + ".iteration";
+                    int iter = loopCounters.getOrDefault(loopKey, 0);
+                    loopCounters.put(loopKey, iter);
 
-            if (normalEdges.isEmpty()) {
-                // Node has only error edges (or none) — treat as terminal on happy path
-                logger.debug("Workflow '{}' completed at terminal node '{}'", graph.name(), currentNodeName);
-                return (O) output;
-            }
+                    // Set ITERATION_COUNT for the developer
+                    ctx = ctx.mutate()
+                            .with(AgentContext.ITERATION_COUNT, iter)
+                            .build();
 
-            WorkflowEdge nextEdge = null;
-            for (WorkflowEdge edge : normalEdges) {
-                if (edge.matches(output)) {
-                    nextEdge = edge;
-                    break;
+                    // Enforce maxIterations
+                    if (iter > maxIterations) {
+                        throw new IllegalStateException("Loop '" + le.name()
+                                + "' exceeded max iterations: " + maxIterations);
+                    }
+
+                    Instant start = Instant.now();
+                    boolean shouldExit = le.exitCondition().test(ctx);
+                    recordTransition(runId, graph.name(), previousNodeName, le.name(),
+                            Duration.between(start, Instant.now()), 0L, 0.0, le.type(),
+                            shouldExit ? "exit" : "continue");
+
+                    previousNodeName = currentNodeName;
+                    if (shouldExit) {
+                        currentNodeName = findEdgeByCondition(graph, le.name(), new EdgeCondition.LoopExit());
+                    } else {
+                        currentNodeName = findEdgeByCondition(graph, le.name(), new EdgeCondition.LoopContinue());
+                        loopCounters.put(loopKey, iter + 1);
+                    }
+                }
+
+                case WorkflowNode.LoopCheckNode lc -> {
+                    // Increment per-loop counter
+                    String loopKey = "loop." + lc.name() + ".iteration";
+                    int iter = loopCounters.getOrDefault(loopKey, 0);
+                    loopCounters.put(loopKey, iter + 1);
+
+                    ctx = ctx.mutate()
+                            .with(AgentContext.ITERATION_COUNT, iter)
+                            .build();
+
+                    if (iter >= maxIterations) {
+                        throw new IllegalStateException("Loop '" + lc.name()
+                                + "' exceeded max iterations: " + maxIterations);
+                    }
+
+                    Instant start = Instant.now();
+                    boolean shouldExit = lc.outputExitCondition().test(currentValue);
+                    recordTransition(runId, graph.name(), previousNodeName, lc.name(),
+                            Duration.between(start, Instant.now()), 0L, 0.0, lc.type(),
+                            shouldExit ? "exit" : "continue");
+
+                    previousNodeName = currentNodeName;
+                    if (shouldExit) {
+                        currentNodeName = findEdgeByCondition(graph, lc.name(), new EdgeCondition.LoopExit());
+                    } else {
+                        currentNodeName = findEdgeByCondition(graph, lc.name(), new EdgeCondition.LoopContinue());
+                    }
+                }
+
+                case WorkflowNode.LoopExitNode lx -> {
+                    // Passthrough — follow unconditional successor
+                    recordTransition(runId, graph.name(), previousNodeName, lx.name(),
+                            Duration.ZERO, 0L, 0.0, lx.type(), null);
+                    previousNodeName = currentNodeName;
+                    String next = graph.unconditionalSuccessor(lx.name());
+                    if (next == null) {
+                        return (O) currentValue;
+                    }
+                    currentNodeName = next;
+                }
+
+                case WorkflowNode.ForkNode fn -> {
+                    Instant start = Instant.now();
+                    // Dispatch branches concurrently
+                    List<WorkflowEdge> branchEdges = graph.edgesFrom(fn.name()).stream()
+                            .filter(e -> e.condition() instanceof EdgeCondition.BranchIndex)
+                            .toList();
+
+                    final Object forkInput = currentValue;
+                    final AgentContext forkCtx = ctx;
+                    List<Future<Object>> futures = new ArrayList<>();
+                    for (WorkflowEdge be : branchEdges) {
+                        String branchNodeName = be.to();
+                        WorkflowNode branchNode = graph.nodeByName(branchNodeName);
+                        if (branchNode instanceof WorkflowNode.StepNode bsn) {
+                            futures.add(parallelExecutor.submit(() -> {
+                                Step step = bsn.step();
+                                return partitionHandler.execute(step, forkCtx, forkInput);
+                            }));
+                        }
+                    }
+
+                    // Find the JoinNode — it's the target of branch StepNode edges
+                    String joinNodeName = null;
+                    for (WorkflowEdge be : branchEdges) {
+                        List<WorkflowEdge> branchOutEdges = graph.edgesFrom(be.to());
+                        for (WorkflowEdge boe : branchOutEdges) {
+                            if (graph.nodeByName(boe.to()) instanceof WorkflowNode.JoinNode) {
+                                joinNodeName = boe.to();
+                                break;
+                            }
+                        }
+                        if (joinNodeName != null) break;
+                    }
+
+                    pendingForks.put(fn.name(), futures);
+                    recordTransition(runId, graph.name(), previousNodeName, fn.name(),
+                            Duration.between(start, Instant.now()), 0L, 0.0, fn.type(), null);
+                    previousNodeName = currentNodeName;
+                    currentNodeName = joinNodeName;
+                }
+
+                case WorkflowNode.JoinNode jn -> {
+                    Instant start = Instant.now();
+                    // Find the fork that owns this join
+                    List<Future<Object>> futures = null;
+                    for (var entry : pendingForks.entrySet()) {
+                        futures = entry.getValue();
+                        pendingForks.remove(entry.getKey());
+                        break;
+                    }
+
+                    if (futures != null) {
+                        // AND-join: collect results in BranchIndex order
+                        List<Object> results = futures.stream()
+                                .map(f -> {
+                                    try { return f.get(); }
+                                    catch (Exception e) {
+                                        throw new RuntimeException("Parallel branch failed", e);
+                                    }
+                                })
+                                .collect(Collectors.toList());
+                        currentValue = results;
+                    }
+                    // else: XOR-join (branch) — currentValue already set by the taken branch
+
+                    recordTransition(runId, graph.name(), previousNodeName, jn.name(),
+                            Duration.between(start, Instant.now()), 0L, 0.0, jn.type(), null);
+                    previousNodeName = currentNodeName;
+                    String next = graph.unconditionalSuccessor(jn.name());
+                    if (next == null) {
+                        return (O) currentValue;
+                    }
+                    currentNodeName = next;
                 }
             }
-
-            if (nextEdge == null) {
-                throw new IllegalStateException(
-                        "Workflow '" + graph.name() + "' stuck at node '" + currentNodeName
-                                + "': no matching outgoing edge");
-            }
-
-            currentInput = nextEdge.transform() != null
-                    ? nextEdge.transform().apply(output)
-                    : output;
-
-            previousNodeName = currentNodeName;
-            currentNodeName = nextEdge.to();
         }
     }
 
-    /**
-     * Executes a workflow graph with default options.
-     */
     public <I, O> O execute(WorkflowGraph<I, O> graph, AgentContext ctx, I input) {
         return execute(graph, ctx, input, null);
     }
 
-    private void recordTransition(String runId, String workflowName, String fromStep,
-                                   String toStep, Duration duration, long tokens, double cost,
-                                   io.github.markpollack.harness.patterns.graph.NodeType nodeType) {
-        traceRecorder.record(new StepTransition(
-                runId, workflowName, fromStep, toStep,
-                Instant.now(), duration, tokens, cost, nodeType
-        ));
-    }
+    // -- Helpers --
 
-    private WorkflowEdge findErrorEdge(WorkflowGraph<?, ?> graph, String nodeName, Exception e) {
+    private String findNonErrorSuccessor(WorkflowGraph<?, ?> graph, String nodeName) {
         List<WorkflowEdge> edges = graph.edgesFrom(nodeName);
         for (WorkflowEdge edge : edges) {
-            if (edge.label() != null && edge.label().startsWith("error:")) {
-                String errorClassName = edge.label().substring("error:".length());
-                if (matchesException(e, errorClassName)) {
-                    return edge;
-                }
+            if (!(edge.condition() instanceof EdgeCondition.ErrorMatch)) {
+                return edge.to();
             }
         }
+        // All edges are error edges or no edges — terminal
         return null;
     }
 
-    private boolean matchesException(Exception e, String className) {
-        Class<?> current = e.getClass();
-        while (current != null) {
-            if (current.getName().equals(className) || current.getSimpleName().equals(className)) {
-                return true;
+    private String findEdgeByCondition(WorkflowGraph<?, ?> graph, String nodeName, EdgeCondition target) {
+        for (WorkflowEdge edge : graph.edgesFrom(nodeName)) {
+            if (edge.condition().equals(target)) {
+                return edge.to();
             }
-            current = current.getSuperclass();
         }
-        return false;
+        throw new IllegalStateException("No edge matching " + target + " from node '" + nodeName + "'");
+    }
+
+    private void recordTransition(String runId, String workflowName, String fromStep,
+                                   String toStep, Duration duration, long tokens, double cost,
+                                   io.github.markpollack.harness.patterns.graph.NodeType nodeType,
+                                   String label) {
+        traceRecorder.record(new StepTransition(
+                runId, workflowName, fromStep, toStep,
+                Instant.now(), duration, tokens, cost, nodeType, label
+        ));
     }
 }

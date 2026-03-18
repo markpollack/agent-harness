@@ -120,15 +120,18 @@ class WorkflowTest {
     class RepeatUntil {
 
         @Test
-        void repeatUntilShouldProduceLoopGraph() {
+        void repeatUntilShouldProduceExplodedLoopGraph() {
             WorkflowGraph<Integer, Integer> graph = Workflow.<Integer, Integer>define("loop")
                     .repeatUntil(ctx -> ctx.get(AgentContext.ITERATION_COUNT).orElse(0) >= 3)
                         .step(Step.named("increment", (ctx, n) -> ((Integer) n) + 1))
                     .end()
                     .compile();
 
-            assertThat(graph.nodes()).hasSize(1);
-            assertThat(graph.nodes().get(0).name()).startsWith("loop-");
+            // Exploded: LoopEntryNode + StepNode + LoopExitNode
+            assertThat(graph.nodes()).hasSize(3);
+            assertThat(graph.nodes().get(0)).isInstanceOf(WorkflowNode.LoopEntryNode.class);
+            assertThat(graph.nodes().get(1)).isInstanceOf(WorkflowNode.StepNode.class);
+            assertThat(graph.nodes().get(2)).isInstanceOf(WorkflowNode.LoopExitNode.class);
         }
 
         @Test
