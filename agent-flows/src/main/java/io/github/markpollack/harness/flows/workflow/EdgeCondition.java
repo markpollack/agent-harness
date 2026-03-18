@@ -11,6 +11,7 @@ public sealed interface EdgeCondition permits
         EdgeCondition.Unconditional,
         EdgeCondition.BooleanGuard,
         EdgeCondition.OptionMatch,
+        EdgeCondition.GateMatch,
         EdgeCondition.BranchIndex,
         EdgeCondition.ErrorMatch,
         EdgeCondition.LoopContinue,
@@ -24,6 +25,9 @@ public sealed interface EdgeCondition permits
 
     /** Decision: LLM chose this option name. */
     record OptionMatch(String optionName) implements EdgeCondition {}
+
+    /** Gate: matches a specific gate evaluation outcome. */
+    record GateMatch(GateDecision decision) implements EdgeCondition {}
 
     /** Parallel: identifies which fork branch (0-indexed). */
     record BranchIndex(int index) implements EdgeCondition {}

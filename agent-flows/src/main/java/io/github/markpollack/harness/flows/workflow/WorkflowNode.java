@@ -16,6 +16,7 @@ public sealed interface WorkflowNode permits
         WorkflowNode.StepNode,
         WorkflowNode.GatewayNode,
         WorkflowNode.DecisionNode,
+        WorkflowNode.GateNode,
         WorkflowNode.LoopEntryNode,
         WorkflowNode.LoopCheckNode,
         WorkflowNode.LoopExitNode,
@@ -51,6 +52,11 @@ public sealed interface WorkflowNode permits
     /** LLM-driven routing — executes routingStep, routes on OptionMatch edges. */
     record DecisionNode(String name, Step<?, ?> routingStep, String joinNodeName) implements WorkflowNode {
         @Override public NodeType type() { return NodeType.AGENT; }
+    }
+
+    /** Quality/approval gate — evaluates Gate, routes on GateMatch edges. */
+    record GateNode(String name, Gate<?> gate, String joinNodeName) implements WorkflowNode {
+        @Override public NodeType type() { return NodeType.DETERMINISTIC; }
     }
 
     /** Loop entry (while-do) — evaluates exitCondition BEFORE body; follows LoopExit or LoopContinue. */

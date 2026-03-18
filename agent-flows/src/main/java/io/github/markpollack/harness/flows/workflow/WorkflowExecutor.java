@@ -151,6 +151,20 @@ public class WorkflowExecutor {
                     currentNodeName = findEdgeByCondition(graph, dn.name(), target);
                 }
 
+                case WorkflowNode.GateNode gateNode -> {
+                    Instant start = Instant.now();
+                    @SuppressWarnings("unchecked")
+                    Gate<Object> gate = (Gate<Object>) gateNode.gate();
+                    GateDecision decision = gate.evaluate(ctx, currentValue);
+                    String label = decision.name().toLowerCase();
+                    recordTransition(runId, graph.name(), previousNodeName, gateNode.name(),
+                            Duration.between(start, Instant.now()), 0L, 0.0, gateNode.type(), label);
+                    // currentValue passes through unchanged — the gate routes, doesn't transform
+                    previousNodeName = currentNodeName;
+                    EdgeCondition gateTarget = new EdgeCondition.GateMatch(decision);
+                    currentNodeName = findEdgeByCondition(graph, gateNode.name(), gateTarget);
+                }
+
                 case WorkflowNode.LoopEntryNode le -> {
                     // Increment per-loop counter
                     String loopKey = "loop." + le.name() + ".iteration";

@@ -147,6 +147,12 @@ public final class Workflow<I, O> implements Step<I, O> {
             return new BranchBuilder<>(this, predicate);
         }
 
+        // -- Gate (exploded: GateNode + pass/fail/timeout StepNodes + JoinNode) --
+
+        public GateBuilder<I, O> gate(Gate<?> gate) {
+            return new GateBuilder<>(this, gate);
+        }
+
         // -- OnError --
 
         public WorkflowBuilder<I, O> onError(Class<? extends Exception> exceptionType, Step<?, ?> recoveryStep) {
@@ -440,6 +446,86 @@ public final class Workflow<I, O> implements Step<I, O> {
                 parent.addEdge(WorkflowEdge.conditional(decisionName, optionNodeName,
                         new EdgeCondition.OptionMatch(optionLabel), optionLabel));
                 parent.addEdge(WorkflowEdge.sequence(optionNodeName, joinName));
+            }
+
+            parent.addNode(new WorkflowNode.JoinNode(joinName));
+            parent.setLastNodeName(joinName);
+            return parent;
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // GateBuilder (exploded: GateNode + pass/fail/timeout StepNodes + JoinNode)
+    // -------------------------------------------------------------------------
+
+    public static final class GateBuilder<I, O> {
+
+        private final WorkflowBuilder<I, O> parent;
+        private final Gate<?> gate;
+        private Step<?, ?> onPassStep;
+        private Step<?, ?> onFailStep;
+        private Step<?, ?> onTimeoutStep;
+
+        private GateBuilder(WorkflowBuilder<I, O> parent, Gate<?> gate) {
+            this.parent = parent;
+            this.gate = Objects.requireNonNull(gate);
+        }
+
+        public GateBuilder<I, O> onPass(Step<?, ?> step) {
+            this.onPassStep = Objects.requireNonNull(step);
+            return this;
+        }
+
+        public GateBuilder<I, O> onFail(Step<?, ?> step) {
+            this.onFailStep = Objects.requireNonNull(step);
+            return this;
+        }
+
+        public GateBuilder<I, O> onTimeout(Step<?, ?> step) {
+            this.onTimeoutStep = Objects.requireNonNull(step);
+            return this;
+        }
+
+        public WorkflowBuilder<I, O> end() {
+            if (onPassStep == null) {
+                throw new IllegalStateException("gate() requires .onPass()");
+            }
+
+            int seq = parent.nodeCounter().incrementAndGet();
+            String gateName = "gate-" + seq;
+            String joinName = "join-" + seq;
+
+            parent.addNode(new WorkflowNode.GateNode(gateName, gate, joinName));
+            if (parent.lastNodeName() != null) {
+                parent.addEdge(WorkflowEdge.sequence(parent.lastNodeName(), gateName));
+            }
+
+            // PASS path (required)
+            String passName = parent.uniqueNodeName(onPassStep.name());
+            parent.addNode(new WorkflowNode.StepNode(passName,
+                    parent.detectNodeType(onPassStep), onPassStep));
+            parent.addEdge(WorkflowEdge.conditional(gateName, passName,
+                    new EdgeCondition.GateMatch(GateDecision.PASS), "pass"));
+            parent.addEdge(WorkflowEdge.sequence(passName, joinName));
+
+            // FAIL path (optional)
+            if (onFailStep != null) {
+                String failName = parent.uniqueNodeName(onFailStep.name());
+                parent.addNode(new WorkflowNode.StepNode(failName,
+                        parent.detectNodeType(onFailStep), onFailStep));
+                parent.addEdge(WorkflowEdge.conditional(gateName, failName,
+                        new EdgeCondition.GateMatch(GateDecision.FAIL), "fail"));
+                parent.addEdge(WorkflowEdge.sequence(failName, joinName));
+            }
+
+            // TIMEOUT path (optional)
+            if (onTimeoutStep != null) {
+                String timeoutName = parent.uniqueNodeName(onTimeoutStep.name());
+                parent.addNode(new WorkflowNode.StepNode(timeoutName,
+                        parent.detectNodeType(onTimeoutStep), onTimeoutStep));
+                parent.addEdge(WorkflowEdge.conditional(gateName, timeoutName,
+                        new EdgeCondition.GateMatch(GateDecision.TIMEOUT), "timeout"));
+                parent.addEdge(WorkflowEdge.sequence(timeoutName, joinName));
             }
 
             parent.addNode(new WorkflowNode.JoinNode(joinName));
