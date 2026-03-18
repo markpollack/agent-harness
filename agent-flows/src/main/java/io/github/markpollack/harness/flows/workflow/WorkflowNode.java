@@ -55,7 +55,8 @@ public sealed interface WorkflowNode permits
     }
 
     /** Quality/approval gate — evaluates Gate, routes on GateMatch edges. */
-    record GateNode(String name, Gate<?> gate, String joinNodeName) implements WorkflowNode {
+    record GateNode(String name, Gate<?> gate, String joinNodeName,
+                    Step<?, ?> reflector, int maxRetries) implements WorkflowNode {
         @Override public NodeType type() { return NodeType.DETERMINISTIC; }
     }
 

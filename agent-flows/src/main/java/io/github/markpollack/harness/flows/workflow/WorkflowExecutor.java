@@ -156,10 +156,32 @@ public class WorkflowExecutor {
                     @SuppressWarnings("unchecked")
                     Gate<Object> gate = (Gate<Object>) gateNode.gate();
                     GateDecision decision = gate.evaluate(ctx, currentValue);
+
+                    // Verdict feedback: write Verdict to context on FAIL
+                    if (decision == GateDecision.FAIL || decision == GateDecision.ESCALATE) {
+                        Object verdict = null;
+                        if (gate instanceof JudgeGate<?> jg) verdict = jg.lastVerdict();
+                        else if (gate instanceof TieredGate<?> tg) verdict = tg.lastVerdict();
+                        if (verdict != null) {
+                            ctx = ctx.mutate()
+                                    .with(AgentContext.JUDGE_VERDICT, verdict)
+                                    .build();
+                            // Run reflector if configured
+                            if (gateNode.reflector() != null) {
+                                @SuppressWarnings("unchecked")
+                                Step<Object, Object> reflector = (Step<Object, Object>) gateNode.reflector();
+                                Object reflection = partitionHandler.execute(reflector, ctx, verdict);
+                                ctx = ctx.mutate()
+                                        .with(AgentContext.JUDGE_REFLECTION, reflection.toString())
+                                        .build();
+                            }
+                        }
+                    }
+
                     String label = decision.name().toLowerCase();
                     recordTransition(runId, graph.name(), previousNodeName, gateNode.name(),
                             Duration.between(start, Instant.now()), 0L, 0.0, gateNode.type(), label);
-                    // currentValue passes through unchanged — the gate routes, doesn't transform
+                    // currentValue passes through unchanged
                     previousNodeName = currentNodeName;
                     EdgeCondition gateTarget = new EdgeCondition.GateMatch(decision);
                     currentNodeName = findEdgeByCondition(graph, gateNode.name(), gateTarget);

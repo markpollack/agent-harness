@@ -65,6 +65,14 @@ public final class AgentContext {
     public static final ContextKey<Long> ACCUMULATED_TOKENS =
             ContextKey.of("accumulatedTokens", Long.class);
 
+    /** Judge verdict from a failed JudgeGate evaluation. The retry step reads this for feedback. */
+    public static final ContextKey<Object> JUDGE_VERDICT =
+            ContextKey.of("judgeVerdict", Object.class);
+
+    /** Reflector-generated feedback text from a failed JudgeGate evaluation. */
+    public static final ContextKey<String> JUDGE_REFLECTION =
+            ContextKey.of("judgeReflection", String.class);
+
     // -------------------------------------------------------------------------
     // Internal state
     // -------------------------------------------------------------------------

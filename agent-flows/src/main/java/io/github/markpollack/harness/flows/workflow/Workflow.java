@@ -465,6 +465,8 @@ public final class Workflow<I, O> implements Step<I, O> {
         private Step<?, ?> onPassStep;
         private Step<?, ?> onFailStep;
         private Step<?, ?> onTimeoutStep;
+        private Step<?, ?> reflector;
+        private int maxRetries = 0;
 
         private GateBuilder(WorkflowBuilder<I, O> parent, Gate<?> gate) {
             this.parent = parent;
@@ -486,6 +488,27 @@ public final class Workflow<I, O> implements Step<I, O> {
             return this;
         }
 
+        /**
+         * Optional reflector step that transforms a judge Verdict into constructive
+         * feedback text. On gate FAIL, the executor runs the reflector and writes
+         * the result to {@code AgentContext.JUDGE_REFLECTION}.
+         */
+        public GateBuilder<I, O> withReflector(Step<?, ?> reflector) {
+            this.reflector = Objects.requireNonNull(reflector);
+            return this;
+        }
+
+        /**
+         * Hard cap on FAIL→retry cycles. When maxRetries > 0 and the gate returns FAIL,
+         * the executor re-runs the fail step and re-evaluates the gate, up to maxRetries
+         * times. If still FAIL after all retries, routes to the fail path.
+         */
+        public GateBuilder<I, O> maxRetries(int maxRetries) {
+            if (maxRetries < 0) throw new IllegalArgumentException("maxRetries must be >= 0");
+            this.maxRetries = maxRetries;
+            return this;
+        }
+
         public WorkflowBuilder<I, O> end() {
             if (onPassStep == null) {
                 throw new IllegalStateException("gate() requires .onPass()");
@@ -495,7 +518,8 @@ public final class Workflow<I, O> implements Step<I, O> {
             String gateName = "gate-" + seq;
             String joinName = "join-" + seq;
 
-            parent.addNode(new WorkflowNode.GateNode(gateName, gate, joinName));
+            parent.addNode(new WorkflowNode.GateNode(gateName, gate, joinName,
+                    reflector, maxRetries));
             if (parent.lastNodeName() != null) {
                 parent.addEdge(WorkflowEdge.sequence(parent.lastNodeName(), gateName));
             }

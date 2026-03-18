@@ -33,6 +33,14 @@
             <artifactId>jackson-databind</artifactId>
         </dependency>
 
+        <!-- Agent Judge (optional — JudgeGate, TieredGate) -->
+        <dependency>
+            <groupId>org.springaicommunity</groupId>
+            <artifactId>agent-judge-core</artifactId>
+            <version>0.9.1-SNAPSHOT</version>
+            <optional>true</optional>
+        </dependency>
+
         <!-- Logging -->
         <dependency>
             <groupId>org.slf4j</groupId>

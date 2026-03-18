@@ -4,9 +4,19 @@ import io.github.markpollack.harness.flows.AgentContext;
 import io.github.markpollack.harness.flows.Step;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.springaicommunity.judge.jury.Jury;
+import org.springaicommunity.judge.jury.Verdict;
+import org.springaicommunity.judge.result.Judgment;
+import org.springaicommunity.judge.score.NumericalScore;
+
+import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class GateTest {
 
@@ -190,5 +200,150 @@ class GateTest {
 
             assertThat(result).isEqualTo("ok: test");
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // JudgeGate
+    // -------------------------------------------------------------------------
+
+    @Nested
+    class JudgeGateTests {
+
+        @Test
+        void judgeGateShouldPassWhenScoreAboveThreshold() {
+            Jury jury = mockJuryReturningScore(0.9);
+            JudgeGate<Object> gate = new JudgeGate<>(jury, 0.8);
+
+            String result = Workflow.<String, String>define("judge-pass")
+                    .gate(gate)
+                        .onPass(Step.named("commit", (ctx, in) -> "committed"))
+                        .onFail(Step.named("retry", (ctx, in) -> "retried"))
+                    .end()
+                    .run("output");
+
+            assertThat(result).isEqualTo("committed");
+        }
+
+        @Test
+        void judgeGateShouldFailWhenScoreBelowThreshold() {
+            Jury jury = mockJuryReturningScore(0.5);
+            JudgeGate<Object> gate = new JudgeGate<>(jury, 0.8);
+
+            String result = Workflow.<String, String>define("judge-fail")
+                    .gate(gate)
+                        .onPass(Step.named("commit", (ctx, in) -> "committed"))
+                        .onFail(Step.named("retry", (ctx, in) -> "retried"))
+                    .end()
+                    .run("output");
+
+            assertThat(result).isEqualTo("retried");
+        }
+
+        @Test
+        void judgeGateFailShouldWriteVerdictToContext() {
+            Jury jury = mockJuryReturningScore(0.3);
+            JudgeGate<Object> gate = new JudgeGate<>(jury, 0.8);
+            AtomicReference<Object> capturedVerdict = new AtomicReference<>();
+
+            Workflow.<String, String>define("verdict-feedback")
+                    .gate(gate)
+                        .onPass(Step.named("commit", (ctx, in) -> "committed"))
+                        .onFail(Step.named("retry", (ctx, in) -> {
+                            capturedVerdict.set(ctx.get(AgentContext.JUDGE_VERDICT).orElse(null));
+                            return "retried";
+                        }))
+                    .end()
+                    .run("output");
+
+            assertThat(capturedVerdict.get()).isNotNull();
+            assertThat(capturedVerdict.get()).isInstanceOf(Verdict.class);
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // TieredGate
+    // -------------------------------------------------------------------------
+
+    @Nested
+    class TieredGateTests {
+
+        @Test
+        void tieredGateShouldPassOnHighScore() {
+            Jury jury = mockJuryReturningScore(0.95);
+            TieredGate<Object> gate = new TieredGate<>(jury, 0.9, 0.6);
+
+            GateDecision decision = gate.evaluate(AgentContext.create(), "output");
+            assertThat(decision).isEqualTo(GateDecision.PASS);
+        }
+
+        @Test
+        void tieredGateShouldEscalateOnBorderlineScore() {
+            Jury jury = mockJuryReturningScore(0.75);
+            TieredGate<Object> gate = new TieredGate<>(jury, 0.9, 0.6);
+
+            GateDecision decision = gate.evaluate(AgentContext.create(), "output");
+            assertThat(decision).isEqualTo(GateDecision.ESCALATE);
+        }
+
+        @Test
+        void tieredGateShouldFailOnLowScore() {
+            Jury jury = mockJuryReturningScore(0.3);
+            TieredGate<Object> gate = new TieredGate<>(jury, 0.9, 0.6);
+
+            GateDecision decision = gate.evaluate(AgentContext.create(), "output");
+            assertThat(decision).isEqualTo(GateDecision.FAIL);
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Reflector
+    // -------------------------------------------------------------------------
+
+    @Nested
+    class ReflectorTests {
+
+        @Test
+        void reflectorShouldWriteFeedbackToContextOnFail() {
+            Jury jury = mockJuryReturningScore(0.3);
+            JudgeGate<Object> gate = new JudgeGate<>(jury, 0.8);
+            AtomicReference<String> capturedReflection = new AtomicReference<>();
+
+            Step<?, ?> reflector = Step.named("reflector",
+                    (ctx, verdict) -> "Improve: score was too low");
+
+            Workflow.<String, String>define("reflector-test")
+                    .gate(gate)
+                        .withReflector(reflector)
+                        .onPass(Step.named("commit", (ctx, in) -> "committed"))
+                        .onFail(Step.named("retry", (ctx, in) -> {
+                            capturedReflection.set(
+                                    ctx.get(AgentContext.JUDGE_REFLECTION).orElse(null));
+                            return "retried";
+                        }))
+                    .end()
+                    .run("output");
+
+            assertThat(capturedReflection.get()).isEqualTo("Improve: score was too low");
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Helpers
+    // -------------------------------------------------------------------------
+
+    private static Jury mockJuryReturningScore(double score) {
+        Jury jury = mock(Jury.class);
+        Verdict verdict = Verdict.builder()
+                .aggregated(Judgment.builder()
+                        .score(new NumericalScore(score, 0.0, 1.0))
+                        .status(score >= 0.5
+                                ? org.springaicommunity.judge.result.JudgmentStatus.PASS
+                                : org.springaicommunity.judge.result.JudgmentStatus.FAIL)
+                        .reasoning("Score: " + score)
+                        .build())
+                .individual(List.of())
+                .build();
+        when(jury.vote(any())).thenReturn(verdict);
+        return jury;
     }
 }
