@@ -67,6 +67,21 @@ public interface Step<I, O> {
     }
 
     /**
+     * Declared input type. Defaults to {@code Object.class} (opt-out).
+     * Override to enable {@code WorkflowGraphAssert.assertTypeCompatible()} checks.
+     */
+    default Class<?> inputType() {
+        return Object.class;
+    }
+
+    /**
+     * Declared output type. Defaults to {@code Object.class} (opt-out).
+     */
+    default Class<?> outputType() {
+        return Object.class;
+    }
+
+    /**
      * Creates a named step from a lambda.
      * <p>
      * Use when a step needs a human-readable name for traces:

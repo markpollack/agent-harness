@@ -343,6 +343,124 @@ class WorkflowTest {
     }
 
     // -------------------------------------------------------------------------
+    // RepeatUntilOutput (do-while)
+    // -------------------------------------------------------------------------
+
+    @Nested
+    class RepeatUntilOutput {
+
+        @Test
+        void repeatUntilOutputShouldProduceDoWhileTopology() {
+            WorkflowGraph<Integer, Integer> graph = Workflow.<Integer, Integer>define("do-while")
+                    .repeatUntilOutput(n -> ((Integer) n) >= 3)
+                        .step(Step.named("increment", (ctx, n) -> ((Integer) n) + 1))
+                    .end()
+                    .compile();
+
+            // Do-while: StepNode + LoopCheckNode + LoopExitNode
+            assertThat(graph.nodes()).hasSize(3);
+            assertThat(graph.nodes().get(0)).isInstanceOf(WorkflowNode.StepNode.class);
+            assertThat(graph.nodes().get(1)).isInstanceOf(WorkflowNode.LoopCheckNode.class);
+            assertThat(graph.nodes().get(2)).isInstanceOf(WorkflowNode.LoopExitNode.class);
+        }
+
+        @Test
+        void repeatUntilOutputShouldRunBodyThenCheckOutput() {
+            AtomicInteger count = new AtomicInteger(0);
+
+            int result = Workflow.<Integer, Integer>define("do-while")
+                    .repeatUntilOutput(n -> ((Integer) n) >= 3)
+                        .step(Step.named("increment", (ctx, n) -> {
+                            count.incrementAndGet();
+                            return ((Integer) n) + 1;
+                        }))
+                    .end()
+                    .run(0);
+
+            assertThat(result).isEqualTo(3);
+            assertThat(count.get()).isEqualTo(3);
+        }
+
+        @Test
+        void repeatUntilOutputBodyShouldAlwaysRunAtLeastOnce() {
+            AtomicInteger count = new AtomicInteger(0);
+
+            String result = Workflow.<String, String>define("do-while-once")
+                    .repeatUntilOutput(s -> true)  // exit immediately after first body run
+                        .step(Step.named("once", (ctx, in) -> {
+                            count.incrementAndGet();
+                            return in + "-ran";
+                        }))
+                    .end()
+                    .run("start");
+
+            assertThat(result).isEqualTo("start-ran");
+            assertThat(count.get()).isEqualTo(1);  // body ALWAYS runs at least once (do-while)
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Topology tests (exploded graph structure)
+    // -------------------------------------------------------------------------
+
+    @Nested
+    class Topology {
+
+        @Test
+        void branchShouldProduceGatewayAndJoinNodes() {
+            WorkflowGraph<String, String> graph = Workflow.<String, String>define("branch-topo")
+                    .branch(output -> true)
+                        .then(Step.named("a", (ctx, in) -> in))
+                        .otherwise(Step.named("b", (ctx, in) -> in))
+                    .compile();
+
+            // GatewayNode + StepNode(a) + StepNode(b) + JoinNode = 4
+            assertThat(graph.nodes()).hasSize(4);
+            assertThat(graph.nodes().get(0)).isInstanceOf(WorkflowNode.GatewayNode.class);
+            assertThat(graph.nodes().get(1)).isInstanceOf(WorkflowNode.StepNode.class);
+            assertThat(graph.nodes().get(2)).isInstanceOf(WorkflowNode.StepNode.class);
+            assertThat(graph.nodes().get(3)).isInstanceOf(WorkflowNode.JoinNode.class);
+            // 5 edges: prev→gw, gw→a(true), gw→b(false), a→join, b→join
+            assertThat(graph.edges()).hasSize(4); // no prev edge since branch is first
+        }
+
+        @Test
+        void parallelShouldProduceForkAndJoinNodes() {
+            WorkflowGraph<String, Object> graph = Workflow.<String, Object>define("par-topo")
+                    .parallel(
+                            Step.named("a", (ctx, in) -> in),
+                            Step.named("b", (ctx, in) -> in))
+                    .compile();
+
+            // ForkNode + StepNode(a) + StepNode(b) + JoinNode = 4
+            assertThat(graph.nodes()).hasSize(4);
+            assertThat(graph.nodes().get(0)).isInstanceOf(WorkflowNode.ForkNode.class);
+            assertThat(graph.nodes().get(3)).isInstanceOf(WorkflowNode.JoinNode.class);
+            // 4 edges: fork→a(BranchIndex0), fork→b(BranchIndex1), a→join, b→join
+            assertThat(graph.edges()).hasSize(4);
+        }
+
+        @Test
+        void decisionShouldProduceDecisionAndJoinNodes() {
+            var client = org.mockito.Mockito.mock(
+                    org.springframework.ai.chat.client.ChatClient.class,
+                    org.mockito.Mockito.RETURNS_DEEP_STUBS);
+
+            WorkflowGraph<String, String> graph = Workflow.<String, String>define("dec-topo")
+                    .decision(client)
+                        .option("x", Step.named("sx", (ctx, in) -> in))
+                        .option("y", Step.named("sy", (ctx, in) -> in))
+                    .end()
+                    .compile();
+
+            // DecisionNode + StepNode(sx) + StepNode(sy) + JoinNode = 4
+            assertThat(graph.nodes()).hasSize(4);
+            assertThat(graph.nodes().get(0)).isInstanceOf(WorkflowNode.DecisionNode.class);
+            assertThat(graph.nodes().get(3)).isInstanceOf(WorkflowNode.JoinNode.class);
+        }
+    }
+
+    // -------------------------------------------------------------------------
     // Edge cases
     // -------------------------------------------------------------------------
 
