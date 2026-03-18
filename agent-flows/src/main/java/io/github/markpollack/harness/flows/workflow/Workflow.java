@@ -53,6 +53,24 @@ public final class Workflow<I, O> implements Step<I, O> {
         return new WorkflowBuilder<>(name);
     }
 
+    /**
+     * Power shortcut: LLM autonomously invokes sub-agents until satisfied.
+     * <p>
+     * Internally composed as {@code repeatUntil(pred).step(decision(client).options(agents)).end()}.
+     * The LLM chooses which agent to invoke on each iteration; the loop exits
+     * when the predicate passes.
+     *
+     * <pre>{@code
+     * Workflow.supervisor("delegate", routingClient)
+     *     .agents(codeReview, securityAudit, docUpdate)
+     *     .until(ctx -> ctx.get(ITERATION_COUNT).orElse(0) >= 5)
+     *     .run(event);
+     * }</pre>
+     */
+    public static <I, O> SupervisorBuilder<I, O> supervisor(String name, ChatClient routingClient) {
+        return new SupervisorBuilder<>(name, routingClient);
+    }
+
     // -------------------------------------------------------------------------
     // WorkflowBuilder
     // -------------------------------------------------------------------------
@@ -121,6 +139,45 @@ public final class Workflow<I, O> implements Step<I, O> {
             nodes.add(new WorkflowNode.JoinNode(joinName));
             lastNodeName = joinName;
             return this;
+        }
+
+        // -- Dynamic Parallel (runtime fan-out: one step per item) --
+
+        /**
+         * Dynamic fan-out: at execution time, evaluates the supplier to get a list of items,
+         * creates a step per item via the mapper, fans them all out concurrently, and collects
+         * results as {@code List<Object>}.
+         *
+         * <pre>{@code
+         * .parallel(ctx -> ctx.require(FILES_KEY), file -> analyzeStep)
+         * }</pre>
+         *
+         * @param itemsSupplier provides the items to fan out over (evaluated at execution time)
+         * @param mapper        creates a step for each item
+         * @return this builder
+         */
+        @SuppressWarnings({"unchecked", "rawtypes"})
+        public WorkflowBuilder<I, O> parallel(
+                java.util.function.Function<AgentContext, List<?>> itemsSupplier,
+                java.util.function.Function<Object, Step<?, ?>> mapper) {
+            String dynamicParName = "dynamic-parallel-" + nodeCounter.incrementAndGet();
+            Step<Object, List<Object>> dynamicStep = Step.named(dynamicParName, (ctx, input) -> {
+                List<?> items = itemsSupplier.apply(ctx);
+                if (items == null || items.isEmpty()) {
+                    return List.of();
+                }
+                List<java.util.concurrent.CompletableFuture<Object>> futures = new java.util.ArrayList<>();
+                for (Object item : items) {
+                    Step step = mapper.apply(item);
+                    futures.add(java.util.concurrent.CompletableFuture.supplyAsync(
+                            () -> ((Step) step).execute(ctx, item)));
+                }
+                return futures.stream()
+                        .map(java.util.concurrent.CompletableFuture::join)
+                        .collect(java.util.stream.Collectors.toList());
+            });
+
+            return step(dynamicStep);
         }
 
         // -- RepeatUntil (while-do: LoopEntryNode + body StepNodes + LoopExitNode) --
@@ -555,6 +612,77 @@ public final class Workflow<I, O> implements Step<I, O> {
             parent.addNode(new WorkflowNode.JoinNode(joinName));
             parent.setLastNodeName(joinName);
             return parent;
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // SupervisorBuilder (composed: loop + decision)
+    // -------------------------------------------------------------------------
+
+    public static final class SupervisorBuilder<I, O> {
+
+        private final String name;
+        private final ChatClient routingClient;
+        private final List<Step<?, ?>> agents = new ArrayList<>();
+        private Predicate<AgentContext> exitCondition;
+        private int maxIterations = 10;
+
+        private SupervisorBuilder(String name, ChatClient routingClient) {
+            this.name = Objects.requireNonNull(name);
+            this.routingClient = Objects.requireNonNull(routingClient);
+        }
+
+        @SafeVarargs
+        public final SupervisorBuilder<I, O> agents(Step<?, ?>... agents) {
+            for (Step<?, ?> agent : agents) {
+                this.agents.add(Objects.requireNonNull(agent));
+            }
+            return this;
+        }
+
+        public SupervisorBuilder<I, O> until(Predicate<AgentContext> exitCondition) {
+            this.exitCondition = Objects.requireNonNull(exitCondition);
+            return this;
+        }
+
+        public SupervisorBuilder<I, O> maxIterations(int maxIterations) {
+            this.maxIterations = maxIterations;
+            return this;
+        }
+
+        public O run(I input) {
+            return build().execute(AgentContext.create(), input);
+        }
+
+        public O run(I input, RunOptions options) {
+            WorkflowGraph<I, O> graph = build().graph();
+            return new WorkflowExecutor().execute(graph, AgentContext.create(), input, options);
+        }
+
+        public Workflow<I, O> build() {
+            if (agents.isEmpty()) {
+                throw new IllegalStateException("supervisor() requires at least one agent");
+            }
+            if (exitCondition == null) {
+                exitCondition = ctx -> ctx.get(AgentContext.ITERATION_COUNT).orElse(0) >= maxIterations;
+            }
+
+            // Build a decision sub-workflow as a composable Step
+            WorkflowBuilder<Object, Object> decWb = Workflow.define(name + "-decision");
+            DecisionBuilder<Object, Object> db = decWb.decision(routingClient);
+            for (Step<?, ?> agent : agents) {
+                db.option(agent.name(), agent);
+            }
+            db.end();
+            Workflow<Object, Object> decisionWorkflow = decWb.build();
+
+            // Compose: repeatUntil(exitCondition).step(decisionWorkflow).end()
+            WorkflowBuilder<I, O> wb = Workflow.define(name);
+            wb.repeatUntil(exitCondition)
+                    .step(decisionWorkflow)
+                    .end();
+
+            return wb.build();
         }
     }
 }
