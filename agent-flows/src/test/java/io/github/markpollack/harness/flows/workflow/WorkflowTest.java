@@ -110,6 +110,35 @@ class WorkflowTest {
 
             assertThat(result).containsExactlyInAnyOrder("x-A", "x-B");
         }
+
+        @Test
+        @SuppressWarnings("unchecked")
+        void nestedParallelShouldCollectResultsCorrectly() {
+            // Inner parallel workflows — each returns List<Object>
+            Workflow<String, Object> innerAB = Workflow.<String, Object>define("inner-ab")
+                    .parallel(
+                            Step.named("a", (ctx, in) -> in + "-A"),
+                            Step.named("b", (ctx, in) -> in + "-B"))
+                    .build();
+
+            Workflow<String, Object> innerCD = Workflow.<String, Object>define("inner-cd")
+                    .parallel(
+                            Step.named("c", (ctx, in) -> in + "-C"),
+                            Step.named("d", (ctx, in) -> in + "-D"))
+                    .build();
+
+            // Outer parallel runs both inner parallels concurrently
+            List<Object> result = (List<Object>) Workflow.<String, Object>define("outer")
+                    .parallel(innerAB, innerCD)
+                    .run("x");
+
+            // Outer collects two List<Object> results — one from each inner parallel
+            assertThat(result).hasSize(2);
+            List<Object> ab = (List<Object>) result.get(0);
+            List<Object> cd = (List<Object>) result.get(1);
+            assertThat(ab).containsExactlyInAnyOrder("x-A", "x-B");
+            assertThat(cd).containsExactlyInAnyOrder("x-C", "x-D");
+        }
     }
 
     // -------------------------------------------------------------------------
