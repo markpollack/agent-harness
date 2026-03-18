@@ -17,9 +17,13 @@ package io.github.markpollack.harness.flows.steps;
 
 import io.github.markpollack.harness.flows.AgentContext;
 import io.github.markpollack.harness.flows.Step;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.util.concurrent.atomic.AtomicInteger;
+
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class StepTest {
 
@@ -119,5 +123,88 @@ class StepTest {
         ClaudeStep step = ClaudeStep.of("test: {input}");
 
         assertThat(step.name()).isEqualTo("ClaudeStep");
+    }
+
+    // -------------------------------------------------------------------------
+    // Steps.retrying()
+    // -------------------------------------------------------------------------
+
+    @Nested
+    class Retrying {
+
+        @Test
+        void retryingShouldSucceedOnFirstAttempt() {
+            Step<String, String> inner = Step.named("upper", (c, s) -> s.toUpperCase());
+            Step<String, String> retrying = Steps.retrying(3, inner);
+
+            assertThat(retrying.execute(ctx, "hello")).isEqualTo("HELLO");
+            assertThat(retrying.name()).isEqualTo("retrying[3]:upper");
+        }
+
+        @Test
+        void retryingShouldRetryAndSucceedOnSecondAttempt() {
+            AtomicInteger calls = new AtomicInteger(0);
+            Step<String, String> flaky = Step.named("flaky", (c, input) -> {
+                if (calls.incrementAndGet() < 2) {
+                    throw new RuntimeException("transient failure");
+                }
+                return input.toUpperCase();
+            });
+
+            Step<String, String> retrying = Steps.retrying(3, flaky);
+            assertThat(retrying.execute(ctx, "hello")).isEqualTo("HELLO");
+            assertThat(calls.get()).isEqualTo(2);
+        }
+
+        @Test
+        void retryingShouldExhaustAttemptsAndWrapException() {
+            Step<String, String> alwaysFails = Step.named("broken", (c, input) -> {
+                throw new IllegalStateException("permanent failure");
+            });
+
+            Step<String, String> retrying = Steps.retrying(3, alwaysFails);
+
+            assertThatThrownBy(() -> retrying.execute(ctx, "input"))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("failed after 3 attempts")
+                    .hasMessageContaining("broken")
+                    .hasCauseInstanceOf(IllegalStateException.class);
+        }
+
+        @Test
+        void retryingWithTypeShouldPropagateNonMatchingExceptionImmediately() {
+            AtomicInteger calls = new AtomicInteger(0);
+            Step<String, String> wrongException = Step.named("wrong-ex", (c, input) -> {
+                calls.incrementAndGet();
+                throw new IllegalArgumentException("not a timeout");
+            });
+
+            Step<String, String> retrying = Steps.retrying(3,
+                    UnsupportedOperationException.class, wrongException);
+
+            assertThatThrownBy(() -> retrying.execute(ctx, "input"))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessage("not a timeout");
+            // Only one attempt — non-matching exception propagates immediately
+            assertThat(calls.get()).isEqualTo(1);
+        }
+
+        @Test
+        void retryingWithTypeShouldRetryOnMatchingException() {
+            AtomicInteger calls = new AtomicInteger(0);
+            Step<String, String> flakyTyped = Step.named("flaky-typed", (c, input) -> {
+                if (calls.incrementAndGet() < 3) {
+                    throw new IllegalStateException("retry me");
+                }
+                return "ok";
+            });
+
+            Step<String, String> retrying = Steps.retrying(3, IllegalStateException.class,
+                    flakyTyped);
+
+            assertThat(retrying.execute(ctx, "input")).isEqualTo("ok");
+            assertThat(calls.get()).isEqualTo(3);
+            assertThat(retrying.name()).isEqualTo("retrying[3,IllegalStateException]:flaky-typed");
+        }
     }
 }

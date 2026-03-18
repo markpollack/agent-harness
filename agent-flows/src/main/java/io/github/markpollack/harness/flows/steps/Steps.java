@@ -98,4 +98,89 @@ public final class Steps {
             throw new WorkflowTerminatedException(status, message);
         });
     }
+
+    /**
+     * Wraps a step to retry on any exception, up to {@code maxAttempts} times total.
+     * If all attempts fail, the last exception is wrapped and propagated.
+     * <p>
+     * This covers the simple 80% re-run case. For exponential backoff, circuit breaking,
+     * or result-based retry, use Resilience4j directly.
+     * <p>
+     * <b>Do not use with {@code TemporalPartitionHandler}</b> — Temporal's {@code RetryPolicy}
+     * and this wrapper would multiply retry attempts.
+     *
+     * <pre>{@code
+     * Steps.retrying(3, myStep)   // retry myStep up to 3 times on any exception
+     * }</pre>
+     *
+     * @param maxAttempts maximum number of execution attempts (must be >= 1)
+     * @param step        the step to wrap
+     * @param <I>         input type
+     * @param <O>         output type
+     * @return a step that retries the given step on failure
+     */
+    public static <I, O> Step<I, O> retrying(int maxAttempts, Step<I, O> step) {
+        if (maxAttempts < 1) {
+            throw new IllegalArgumentException("maxAttempts must be >= 1, got " + maxAttempts);
+        }
+        return Step.named("retrying[" + maxAttempts + "]:" + step.name(), (ctx, input) -> {
+            Exception last = null;
+            for (int attempt = 0; attempt < maxAttempts; attempt++) {
+                try {
+                    return step.execute(ctx, input);
+                }
+                catch (Exception e) {
+                    last = e;
+                }
+            }
+            throw new RuntimeException(
+                    "Step '" + step.name() + "' failed after " + maxAttempts + " attempts", last);
+        });
+    }
+
+    /**
+     * Wraps a step to retry only on a specific exception type, up to {@code maxAttempts}
+     * times total. Exceptions not matching {@code exType} propagate immediately without
+     * consuming a retry attempt.
+     * <p>
+     * <b>Do not use with {@code TemporalPartitionHandler}</b> — Temporal's {@code RetryPolicy}
+     * and this wrapper would multiply retry attempts.
+     *
+     * <pre>{@code
+     * Steps.retrying(3, TimeoutException.class, myStep)
+     * }</pre>
+     *
+     * @param maxAttempts maximum number of execution attempts (must be >= 1)
+     * @param exType      the exception type to retry on
+     * @param step        the step to wrap
+     * @param <I>         input type
+     * @param <O>         output type
+     * @param <E>         exception type
+     * @return a step that retries the given step on matching exceptions
+     */
+    public static <I, O, E extends Exception> Step<I, O> retrying(
+            int maxAttempts, Class<E> exType, Step<I, O> step) {
+        if (maxAttempts < 1) {
+            throw new IllegalArgumentException("maxAttempts must be >= 1, got " + maxAttempts);
+        }
+        return Step.named(
+                "retrying[" + maxAttempts + "," + exType.getSimpleName() + "]:" + step.name(),
+                (ctx, input) -> {
+                    Exception last = null;
+                    for (int attempt = 0; attempt < maxAttempts; attempt++) {
+                        try {
+                            return step.execute(ctx, input);
+                        }
+                        catch (Exception e) {
+                            if (!exType.isInstance(e)) {
+                                throw e;
+                            }
+                            last = e;
+                        }
+                    }
+                    throw new RuntimeException(
+                            "Step '" + step.name() + "' failed after " + maxAttempts + " attempts",
+                            last);
+                });
+    }
 }
