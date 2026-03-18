@@ -104,7 +104,7 @@ public final class Workflow<I, O> implements Step<I, O> {
             String forkName = "fork-" + seq;
             String joinName = "join-" + seq;
 
-            nodes.add(new WorkflowNode.ForkNode(forkName));
+            nodes.add(new WorkflowNode.ForkNode(forkName, joinName));
             if (lastNodeName != null) {
                 edges.add(WorkflowEdge.sequence(lastNodeName, forkName));
             }
@@ -362,7 +362,7 @@ public final class Workflow<I, O> implements Step<I, O> {
             String elseName = parent.uniqueNodeName(step.name());
             String joinName = "join-" + seq;
 
-            parent.addNode(new WorkflowNode.GatewayNode(gwName, predicate));
+            parent.addNode(new WorkflowNode.GatewayNode(gwName, predicate, joinName));
             if (parent.lastNodeName() != null) {
                 parent.addEdge(WorkflowEdge.sequence(parent.lastNodeName(), gwName));
             }
@@ -426,7 +426,7 @@ public final class Workflow<I, O> implements Step<I, O> {
                     new LinkedHashSet<>(options.keySet()),
                     DecisionStep.DEFAULT_PROMPT_TEMPLATE);
 
-            parent.addNode(new WorkflowNode.DecisionNode(decisionName, routingStep));
+            parent.addNode(new WorkflowNode.DecisionNode(decisionName, routingStep, joinName));
             if (parent.lastNodeName() != null) {
                 parent.addEdge(WorkflowEdge.sequence(parent.lastNodeName(), decisionName));
             }

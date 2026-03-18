@@ -245,35 +245,18 @@ public class WorkflowExecutor {
                         }
                     }
 
-                    // Find the JoinNode — it's the target of branch StepNode edges
-                    String joinNodeName = null;
-                    for (WorkflowEdge be : branchEdges) {
-                        List<WorkflowEdge> branchOutEdges = graph.edgesFrom(be.to());
-                        for (WorkflowEdge boe : branchOutEdges) {
-                            if (graph.nodeByName(boe.to()) instanceof WorkflowNode.JoinNode) {
-                                joinNodeName = boe.to();
-                                break;
-                            }
-                        }
-                        if (joinNodeName != null) break;
-                    }
-
-                    pendingForks.put(fn.name(), futures);
+                    // Jump directly to the join — no edge traversal needed
+                    pendingForks.put(fn.joinNodeName(), futures);
                     recordTransition(runId, graph.name(), previousNodeName, fn.name(),
                             Duration.between(start, Instant.now()), 0L, 0.0, fn.type(), null);
                     previousNodeName = currentNodeName;
-                    currentNodeName = joinNodeName;
+                    currentNodeName = fn.joinNodeName();
                 }
 
                 case WorkflowNode.JoinNode jn -> {
                     Instant start = Instant.now();
-                    // Find the fork that owns this join
-                    List<Future<Object>> futures = null;
-                    for (var entry : pendingForks.entrySet()) {
-                        futures = entry.getValue();
-                        pendingForks.remove(entry.getKey());
-                        break;
-                    }
+                    // Retrieve futures keyed by this join's name (written by ForkNode handler)
+                    List<Future<Object>> futures = pendingForks.remove(jn.name());
 
                     if (futures != null) {
                         // AND-join: collect results in BranchIndex order

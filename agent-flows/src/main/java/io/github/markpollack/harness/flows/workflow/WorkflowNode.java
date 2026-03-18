@@ -44,12 +44,12 @@ public sealed interface WorkflowNode permits
     record StepNode(String name, NodeType type, Step<?, ?> step) implements WorkflowNode {}
 
     /** Deterministic routing — evaluates predicate, routes on BooleanGuard edges. Value passed unchanged. */
-    record GatewayNode(String name, Predicate<Object> predicate) implements WorkflowNode {
+    record GatewayNode(String name, Predicate<Object> predicate, String joinNodeName) implements WorkflowNode {
         @Override public NodeType type() { return NodeType.DETERMINISTIC; }
     }
 
     /** LLM-driven routing — executes routingStep, routes on OptionMatch edges. */
-    record DecisionNode(String name, Step<?, ?> routingStep) implements WorkflowNode {
+    record DecisionNode(String name, Step<?, ?> routingStep, String joinNodeName) implements WorkflowNode {
         @Override public NodeType type() { return NodeType.AGENT; }
     }
 
@@ -69,7 +69,7 @@ public sealed interface WorkflowNode permits
     }
 
     /** Parallel fan-out — dispatches one branch per BranchIndex edge concurrently. */
-    record ForkNode(String name) implements WorkflowNode {
+    record ForkNode(String name, String joinNodeName) implements WorkflowNode {
         @Override public NodeType type() { return NodeType.DETERMINISTIC; }
     }
 
