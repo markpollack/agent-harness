@@ -16,6 +16,7 @@
 package io.github.markpollack.harness.flows.steps;
 
 import io.github.markpollack.harness.flows.AgentContext;
+import io.github.markpollack.harness.flows.ContextKey;
 import io.github.markpollack.harness.flows.Step;
 import io.github.markpollack.harness.flows.workflow.WorkflowStatus;
 import io.github.markpollack.harness.flows.workflow.WorkflowTerminatedException;
@@ -97,6 +98,22 @@ public final class Steps {
         return Step.named("terminate[" + status + "]", (ctx, input) -> {
             throw new WorkflowTerminatedException(status, message);
         });
+    }
+
+    /**
+     * Returns a {@link ContextKey} for accessing a prior step's output from {@link AgentContext}.
+     * <p>
+     * The {@code WorkflowExecutor} auto-propagates every step's output into context under
+     * this key after execution. Any downstream step can read any prior step's result:
+     * <pre>{@code
+     * ReviewReport prior = (ReviewReport) ctx.require(Steps.outputOf("analyzeDiff"));
+     * }</pre>
+     *
+     * @param stepName the name of the step whose output to access
+     * @return a ContextKey for the step's output
+     */
+    public static ContextKey<Object> outputOf(String stepName) {
+        return ContextKey.of("step.output." + stepName, Object.class);
     }
 
     /**

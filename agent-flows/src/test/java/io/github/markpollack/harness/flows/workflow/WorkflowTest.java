@@ -23,6 +23,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -486,6 +487,50 @@ class WorkflowTest {
             assertThat(graph.nodes()).hasSize(4);
             assertThat(graph.nodes().get(0)).isInstanceOf(WorkflowNode.DecisionNode.class);
             assertThat(graph.nodes().get(3)).isInstanceOf(WorkflowNode.JoinNode.class);
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Context auto-propagation (DD-15)
+    // -------------------------------------------------------------------------
+
+    @Nested
+    class ContextPropagation {
+
+        @Test
+        void downstreamStepShouldReadPriorStepOutputFromContext() {
+            AtomicReference<Object> captured = new AtomicReference<>();
+
+            Workflow.<String, String>define("propagation")
+                    .step(Step.named("produce", (ctx, in) -> "produced-value"))
+                    .then(Step.named("middle", (ctx, in) -> in + "-middle"))
+                    .then(Step.named("consume", (ctx, in) -> {
+                        // Read step A's output even though step B sits between them
+                        captured.set(ctx.get(Steps.outputOf("produce")).orElse(null));
+                        return in;
+                    }))
+                    .run("start");
+
+            assertThat(captured.get()).isEqualTo("produced-value");
+        }
+
+        @Test
+        void eachStepOutputShouldBeAccessibleByName() {
+            AtomicReference<Object> capturedA = new AtomicReference<>();
+            AtomicReference<Object> capturedB = new AtomicReference<>();
+
+            Workflow.<String, String>define("multi-propagation")
+                    .step(Step.named("step-a", (ctx, in) -> "A"))
+                    .then(Step.named("step-b", (ctx, in) -> "B"))
+                    .then(Step.named("reader", (ctx, in) -> {
+                        capturedA.set(ctx.get(Steps.outputOf("step-a")).orElse(null));
+                        capturedB.set(ctx.get(Steps.outputOf("step-b")).orElse(null));
+                        return "done";
+                    }))
+                    .run("start");
+
+            assertThat(capturedA.get()).isEqualTo("A");
+            assertThat(capturedB.get()).isEqualTo("B");
         }
     }
 

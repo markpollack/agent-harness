@@ -115,6 +115,11 @@ public class WorkflowExecutor {
                             Duration.between(stepStart, Instant.now()), 0L, 0.0, sn.type(), null);
                     currentValue = output;
 
+                    // Auto-propagate step output into context (DD-15)
+                    ctx = ctx.mutate()
+                            .with(io.github.markpollack.harness.flows.steps.Steps.outputOf(sn.step().name()), output)
+                            .build();
+
                     // Advance to next node
                     previousNodeName = currentNodeName;
                     String next = findNonErrorSuccessor(graph, currentNodeName);
