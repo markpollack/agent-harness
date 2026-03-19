@@ -696,6 +696,93 @@ class WorkflowTest {
     }
 
     // -------------------------------------------------------------------------
+    // WorkflowGraphAssert — type compatibility checking
+    // -------------------------------------------------------------------------
+
+    @Nested
+    class TypeCompatibility {
+
+        // Typed steps — override inputType/outputType
+        static class StringToInt implements Step<String, Integer> {
+            @Override public String name() { return "string-to-int"; }
+            @Override public Integer execute(AgentContext ctx, String input) { return input.length(); }
+            @Override public Class<?> inputType() { return String.class; }
+            @Override public Class<?> outputType() { return Integer.class; }
+        }
+
+        static class IntToDouble implements Step<Integer, Double> {
+            @Override public String name() { return "int-to-double"; }
+            @Override public Double execute(AgentContext ctx, Integer input) { return input * 1.5; }
+            @Override public Class<?> inputType() { return Integer.class; }
+            @Override public Class<?> outputType() { return Double.class; }
+        }
+
+        static class DoubleToString implements Step<Double, String> {
+            @Override public String name() { return "double-to-string"; }
+            @Override public String execute(AgentContext ctx, Double input) { return "result: " + input; }
+            @Override public Class<?> inputType() { return Double.class; }
+            @Override public Class<?> outputType() { return String.class; }
+        }
+
+        static class StringToString implements Step<String, String> {
+            @Override public String name() { return "string-to-string"; }
+            @Override public String execute(AgentContext ctx, String input) { return input.toUpperCase(); }
+            @Override public Class<?> inputType() { return String.class; }
+            @Override public Class<?> outputType() { return String.class; }
+        }
+
+        @Test
+        void compatibleChainShouldPass() {
+            WorkflowGraph<String, Object> graph = Workflow.<String, Object>define("compatible")
+                    .step(new StringToInt())
+                    .then(new IntToDouble())
+                    .then(new DoubleToString())
+                    .compile();
+
+            WorkflowGraphAssert.assertTypeCompatible(graph);
+            // no exception
+        }
+
+        @Test
+        void incompatibleChainShouldThrow() {
+            WorkflowGraph<String, Object> graph = Workflow.<String, Object>define("incompatible")
+                    .step(new StringToInt())      // outputs Integer
+                    .then(new DoubleToString())    // expects Double — MISMATCH
+                    .compile();
+
+            assertThatThrownBy(() -> WorkflowGraphAssert.assertTypeCompatible(graph))
+                    .isInstanceOf(WorkflowGraphAssert.TypeIncompatibleException.class)
+                    .hasMessageContaining("Integer")
+                    .hasMessageContaining("Double");
+        }
+
+        @Test
+        void untypedStepsShouldBeSkipped() {
+            // Lambda steps return Object.class for both types — skipped
+            WorkflowGraph<String, Object> graph = Workflow.<String, Object>define("mixed")
+                    .step(new StringToInt())
+                    .then(Step.named("untyped", (ctx, in) -> in))  // Object → Object, skipped
+                    .then(new DoubleToString())
+                    .compile();
+
+            // No exception — the untyped step in the middle breaks the chain
+            // but assertTypeCompatible skips it
+            WorkflowGraphAssert.assertTypeCompatible(graph);
+        }
+
+        @Test
+        void compatibleChainShouldAlsoExecuteCorrectly() {
+            String result = (String) Workflow.<String, Object>define("typed-pipeline")
+                    .step(new StringToInt())
+                    .then(new IntToDouble())
+                    .then(new DoubleToString())
+                    .run("hello");
+
+            assertThat(result).isEqualTo("result: 7.5"); // "hello".length()=5, 5*1.5=7.5
+        }
+    }
+
+    // -------------------------------------------------------------------------
     // Edge cases
     // -------------------------------------------------------------------------
 
