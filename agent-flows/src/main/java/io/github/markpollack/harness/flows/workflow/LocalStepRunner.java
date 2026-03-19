@@ -19,12 +19,12 @@ import io.github.markpollack.harness.flows.AgentContext;
 import io.github.markpollack.harness.flows.Step;
 
 /**
- * Default {@link PartitionHandler} that executes steps directly in-process.
+ * Default {@link StepRunner} that executes steps directly in-process.
  * <p>
  * No retry, no checkpoint, no overhead. This is the right handler for
  * development, testing, and pipelines that don't need crash recovery.
  */
-public final class LocalPartitionHandler implements PartitionHandler {
+public final class LocalStepRunner implements StepRunner {
 
     @Override
     public <I, O> O execute(Step<I, O> step, AgentContext ctx, I input) {

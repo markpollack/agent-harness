@@ -123,7 +123,7 @@ public final class Steps {
      * This covers the simple 80% re-run case. For exponential backoff, circuit breaking,
      * or result-based retry, use Resilience4j directly.
      * <p>
-     * <b>Do not use with {@code TemporalPartitionHandler}</b> — Temporal's {@code RetryPolicy}
+     * <b>Do not use with {@code TemporalStepRunner}</b> — Temporal's {@code RetryPolicy}
      * and this wrapper would multiply retry attempts.
      *
      * <pre>{@code
@@ -160,7 +160,7 @@ public final class Steps {
      * times total. Exceptions not matching {@code exType} propagate immediately without
      * consuming a retry attempt.
      * <p>
-     * <b>Do not use with {@code TemporalPartitionHandler}</b> — Temporal's {@code RetryPolicy}
+     * <b>Do not use with {@code TemporalStepRunner}</b> — Temporal's {@code RetryPolicy}
      * and this wrapper would multiply retry attempts.
      *
      * <pre>{@code

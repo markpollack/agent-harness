@@ -22,18 +22,18 @@ import io.github.markpollack.harness.flows.Step;
  * The substrate swap seam for workflow step execution.
  * <p>
  * The same {@link Workflow} definition runs on different substrates
- * by swapping the {@code PartitionHandler} — a single {@code @Bean} change:
+ * by swapping the {@code StepRunner} — a single {@code @Bean} change:
  * <ul>
- *   <li>{@link LocalPartitionHandler} — direct in-process call, zero overhead (default)</li>
- *   <li>{@code CheckpointingPartitionHandler} — JDBC crash recovery (workflow-batch module)</li>
- *   <li>{@code TemporalPartitionHandler} — Temporal durable execution (workflow-temporal module)</li>
+ *   <li>{@link LocalStepRunner} — direct in-process call, zero overhead (default)</li>
+ *   <li>{@code CheckpointingStepRunner} — JDBC crash recovery (workflow-batch module)</li>
+ *   <li>{@code TemporalStepRunner} — Temporal durable execution (workflow-temporal module)</li>
  * </ul>
  * <p>
  * Implementations control retry policy, timeout, heartbeat, and crash recovery.
  * Steps must NOT retry internally when used with a durable handler — the handler
  * owns the retry contract.
  */
-public interface PartitionHandler {
+public interface StepRunner {
 
     /**
      * Executes a single step within the workflow.

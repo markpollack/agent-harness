@@ -22,38 +22,38 @@ import java.util.stream.Collectors;
  * Graph walker that executes a {@link WorkflowGraph} using Java 21 pattern matching switch.
  * <p>
  * Each {@link WorkflowNode} variant has its own handler. The executor dispatches steps
- * through a {@link PartitionHandler} and records transitions via {@link TraceRecorder}.
+ * through a {@link StepRunner} and records transitions via {@link TraceRecorder}.
  */
 public class WorkflowExecutor {
 
     private static final Logger logger = LoggerFactory.getLogger(WorkflowExecutor.class);
     private static final int DEFAULT_MAX_ITERATIONS = 1000;
 
-    private final PartitionHandler partitionHandler;
+    private final StepRunner stepRunner;
     private final TraceRecorder traceRecorder;
     private final ExecutorService parallelExecutor;
 
-    public WorkflowExecutor(PartitionHandler partitionHandler, TraceRecorder traceRecorder,
+    public WorkflowExecutor(StepRunner stepRunner, TraceRecorder traceRecorder,
                             ExecutorService parallelExecutor) {
-        this.partitionHandler = partitionHandler != null ? partitionHandler : new LocalPartitionHandler();
+        this.stepRunner = stepRunner != null ? stepRunner : new LocalStepRunner();
         this.traceRecorder = traceRecorder != null ? traceRecorder : TraceRecorder.noop();
         this.parallelExecutor = parallelExecutor != null ? parallelExecutor :
                 Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 2);
     }
 
-    public WorkflowExecutor(PartitionHandler partitionHandler, TraceRecorder traceRecorder) {
-        this(partitionHandler, traceRecorder, null);
+    public WorkflowExecutor(StepRunner stepRunner, TraceRecorder traceRecorder) {
+        this(stepRunner, traceRecorder, null);
     }
 
     public WorkflowExecutor(TraceRecorder traceRecorder) {
-        this(new LocalPartitionHandler(), traceRecorder, null);
+        this(new LocalStepRunner(), traceRecorder, null);
     }
 
     public WorkflowExecutor() {
-        this(new LocalPartitionHandler(), TraceRecorder.noop(), null);
+        this(new LocalStepRunner(), TraceRecorder.noop(), null);
     }
 
-    public PartitionHandler partitionHandler() { return partitionHandler; }
+    public StepRunner stepRunner() { return stepRunner; }
     public TraceRecorder traceRecorder() { return traceRecorder; }
 
     @SuppressWarnings({"unchecked", "rawtypes"})
@@ -90,7 +90,7 @@ public class WorkflowExecutor {
                     Object output;
                     try {
                         Step step = sn.step();
-                        output = partitionHandler.execute(step, ctx, currentValue);
+                        output = stepRunner.execute(step, ctx, currentValue);
                     } catch (WorkflowTerminatedException e) {
                         recordTransition(runId, graph.name(), previousNodeName, sn.name(),
                                 Duration.between(stepStart, Instant.now()), 0L, 0.0, sn.type(), null);
@@ -151,7 +151,7 @@ public class WorkflowExecutor {
                 case WorkflowNode.DecisionNode dn -> {
                     Instant start = Instant.now();
                     Step routingStep = dn.routingStep();
-                    Object chosenLabel = partitionHandler.execute(routingStep, ctx, currentValue);
+                    Object chosenLabel = stepRunner.execute(routingStep, ctx, currentValue);
                     String chosen = chosenLabel.toString().strip();
                     recordTransition(runId, graph.name(), previousNodeName, dn.name(),
                             Duration.between(start, Instant.now()), 0L, 0.0, dn.type(), chosen);
@@ -180,7 +180,7 @@ public class WorkflowExecutor {
                             if (gateNode.reflector() != null) {
                                 @SuppressWarnings("unchecked")
                                 Step<Object, Object> reflector = (Step<Object, Object>) gateNode.reflector();
-                                Object reflection = partitionHandler.execute(reflector, ctx, verdict);
+                                Object reflection = stepRunner.execute(reflector, ctx, verdict);
                                 ctx = ctx.mutate()
                                         .with(AgentContext.JUDGE_REFLECTION, reflection.toString())
                                         .build();
@@ -286,7 +286,7 @@ public class WorkflowExecutor {
                         if (branchNode instanceof WorkflowNode.StepNode bsn) {
                             futures.add(parallelExecutor.submit(() -> {
                                 Step step = bsn.step();
-                                return partitionHandler.execute(step, forkCtx, forkInput);
+                                return stepRunner.execute(step, forkCtx, forkInput);
                             }));
                         }
                     }

@@ -26,7 +26,7 @@ import java.util.function.BiFunction;
  * <p>
  * The {@link #name()} method returns a stable identifier used in traces, error
  * messages, and visualization. For production steps used with
- * {@code CheckpointingPartitionHandler} or {@code TemporalPartitionHandler},
+ * {@code CheckpointingStepRunner} or {@code TemporalStepRunner},
  * the name must be stable across JVM restarts (it serves as the checkpoint key).
  * <p>
  * Step implementations:

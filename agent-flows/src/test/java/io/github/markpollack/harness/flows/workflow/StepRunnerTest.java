@@ -25,15 +25,15 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-class PartitionHandlerTest {
+class StepRunnerTest {
 
     // -------------------------------------------------------------------------
-    // LocalPartitionHandler
+    // LocalStepRunner
     // -------------------------------------------------------------------------
 
     @Test
     void localHandlerShouldExecuteStepDirectly() {
-        LocalPartitionHandler handler = new LocalPartitionHandler();
+        LocalStepRunner handler = new LocalStepRunner();
         Step<String, String> step = Step.named("upper", (ctx, in) -> in.toUpperCase());
 
         String result = handler.execute(step, AgentContext.create(), "hello");
@@ -43,7 +43,7 @@ class PartitionHandlerTest {
 
     @Test
     void localHandlerShouldPropagateExceptions() {
-        LocalPartitionHandler handler = new LocalPartitionHandler();
+        LocalStepRunner handler = new LocalStepRunner();
         Step<String, String> step = Step.named("fail", (ctx, in) -> {
             throw new IllegalStateException("boom");
         });
@@ -54,13 +54,13 @@ class PartitionHandlerTest {
     }
 
     // -------------------------------------------------------------------------
-    // WorkflowExecutor with custom PartitionHandler
+    // WorkflowExecutor with custom StepRunner
     // -------------------------------------------------------------------------
 
     @Test
     void executorShouldDispatchAllStepsThroughHandler() {
         List<String> dispatched = new ArrayList<>();
-        PartitionHandler spy = new PartitionHandler() {
+        StepRunner spy = new StepRunner() {
             @Override
             @SuppressWarnings("unchecked")
             public <I, O> O execute(Step<I, O> step, AgentContext ctx, I input) {
@@ -86,7 +86,7 @@ class PartitionHandlerTest {
 
     @Test
     void executorShouldPropagateHandlerExceptions() {
-        PartitionHandler failing = new PartitionHandler() {
+        StepRunner failing = new StepRunner() {
             @Override
             public <I, O> O execute(Step<I, O> step, AgentContext ctx, I input) {
                 throw new RuntimeException("handler failed");
