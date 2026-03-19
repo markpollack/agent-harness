@@ -120,6 +120,11 @@ public class WorkflowExecutor {
                             .with(io.github.markpollack.harness.flows.steps.Steps.outputOf(sn.step().name()), output)
                             .build();
 
+                    // Let step publish additional context entries (updateContext)
+                    @SuppressWarnings("unchecked")
+                    Step<Object, Object> typedStep = (Step<Object, Object>) sn.step();
+                    ctx = typedStep.updateContext(ctx, output);
+
                     // Advance to next node
                     previousNodeName = currentNodeName;
                     String next = findNonErrorSuccessor(graph, currentNodeName);

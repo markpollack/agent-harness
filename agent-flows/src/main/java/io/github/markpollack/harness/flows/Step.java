@@ -82,6 +82,25 @@ public interface Step<I, O> {
     }
 
     /**
+     * Publishes additional context entries alongside the primary output.
+     * <p>
+     * Called by the executor after {@link #execute}. Override to write well-known
+     * {@link ContextKey} constants that downstream steps can read — enabling reusable,
+     * generic steps that publish metadata (token counts, confidence scores, detected
+     * language) without coupling to a specific workflow or record type.
+     * <p>
+     * The primary output flows via input chaining; metadata flows via context keys.
+     * Default: returns ctx unchanged (no additional writes).
+     *
+     * @param ctx    the current context (after auto-propagation of primary output)
+     * @param output the primary output from {@link #execute}
+     * @return the context with any additional entries (or ctx unchanged)
+     */
+    default AgentContext updateContext(AgentContext ctx, O output) {
+        return ctx;
+    }
+
+    /**
      * Creates a named step from a lambda.
      * <p>
      * Use when a step needs a human-readable name for traces:
