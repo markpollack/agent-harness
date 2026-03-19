@@ -535,6 +535,167 @@ class WorkflowTest {
     }
 
     // -------------------------------------------------------------------------
+    // Step Parameterization
+    // -------------------------------------------------------------------------
+
+    @Nested
+    class StepParameterization {
+
+        // -- Pattern 1: Constructor injection --
+
+        static class MultiplyStep implements Step<Object, Object> {
+            private final int factor;
+            MultiplyStep(int factor) { this.factor = factor; }
+            @Override public String name() { return "multiply-by-" + factor; }
+            @Override public Object execute(AgentContext ctx, Object input) {
+                return ((Integer) input) * factor;
+            }
+        }
+
+        @Test
+        void constructorInjectionShouldParameterizeStep() {
+            Step<Object, Object> doubler = new MultiplyStep(2);
+            Step<Object, Object> tripler = new MultiplyStep(3);
+
+            int doubled = (int) Workflow.<Integer, Object>define("double")
+                    .step(doubler).run(5);
+            int tripled = (int) Workflow.<Integer, Object>define("triple")
+                    .step(tripler).run(5);
+
+            assertThat(doubled).isEqualTo(10);
+            assertThat(tripled).isEqualTo(15);
+        }
+
+        @Test
+        void constructorInjectedStepShouldHaveDescriptiveName() {
+            Step<Object, Object> step = new MultiplyStep(7);
+            assertThat(step.name()).isEqualTo("multiply-by-7");
+        }
+
+        // -- Pattern 2: Input chaining --
+
+        @Test
+        void inputChainingShouldPassOutputAsInput() {
+            String result = Workflow.<String, String>define("chain")
+                    .step(Step.named("a", (ctx, in) -> in + "-A"))
+                    .then(Step.named("b", (ctx, in) -> in + "-B"))
+                    .then(Step.named("c", (ctx, in) -> in + "-C"))
+                    .run("start");
+
+            assertThat(result).isEqualTo("start-A-B-C");
+        }
+
+        // -- Pattern 3: Context auto-propagation (Steps.outputOf) --
+
+        @Test
+        void downstreamStepShouldReadNonAdjacentStepOutput() {
+            AtomicReference<Object> capturedFromA = new AtomicReference<>();
+
+            Workflow.<String, String>define("context-read")
+                    .step(Step.named("step-a", (ctx, in) -> "value-from-A"))
+                    .then(Step.named("step-b", (ctx, in) -> "value-from-B"))
+                    .then(Step.named("step-c", (ctx, in) -> {
+                        capturedFromA.set(ctx.get(Steps.outputOf("step-a")).orElse(null));
+                        return in;
+                    }))
+                    .run("start");
+
+            assertThat(capturedFromA.get()).isEqualTo("value-from-A");
+        }
+
+        // -- Pattern 3c: Multi-output via record --
+
+        record ClassificationResult(String category, double confidence) {}
+
+        @Test
+        void multiOutputStepShouldBeReadableFromContext() {
+            AtomicReference<Object> capturedRecord = new AtomicReference<>();
+
+            Workflow.<String, Object>define("multi-output")
+                    .step(Step.named("classify", (ctx, in) ->
+                            new ClassificationResult("medical", 0.95)))
+                    .then(Step.named("route", (ctx, in) -> {
+                        ClassificationResult r = (ClassificationResult) in;
+                        return "routed to " + r.category();
+                    }))
+                    .then(Step.named("audit", (ctx, in) -> {
+                        capturedRecord.set(ctx.get(Steps.outputOf("classify")).orElse(null));
+                        return in;
+                    }))
+                    .run("I broke my leg");
+
+            assertThat(capturedRecord.get()).isInstanceOf(ClassificationResult.class);
+            ClassificationResult result = (ClassificationResult) capturedRecord.get();
+            assertThat(result.category()).isEqualTo("medical");
+            assertThat(result.confidence()).isEqualTo(0.95);
+        }
+
+        @Test
+        void multiOutputRecordFieldsShouldBeAccessibleViaInputChaining() {
+            String result = (String) Workflow.<String, Object>define("record-chain")
+                    .step(Step.named("produce", (ctx, in) ->
+                            new ClassificationResult("legal", 0.8)))
+                    .then(Step.named("consume", (ctx, in) -> {
+                        ClassificationResult r = (ClassificationResult) in;
+                        return r.category() + " at " + r.confidence();
+                    }))
+                    .run("contract dispute");
+
+            assertThat(result).isEqualTo("legal at 0.8");
+        }
+
+        // -- Pattern 4: Mixed (constructor + input + context) --
+
+        static class ThresholdCheckStep implements Step<Object, Object> {
+            private final double threshold;
+            ThresholdCheckStep(double threshold) { this.threshold = threshold; }
+            @Override public String name() { return "check-threshold-" + threshold; }
+            @Override public Object execute(AgentContext ctx, Object input) {
+                double value = (Double) input;
+                int iteration = ctx.get(AgentContext.ITERATION_COUNT).orElse(-1);
+                return "value=" + value + " threshold=" + threshold
+                        + " pass=" + (value >= threshold) + " iteration=" + iteration;
+            }
+        }
+
+        @Test
+        void mixedParameterizationShouldCombineAllSources() {
+            String result = (String) Workflow.<Double, Object>define("mixed")
+                    .step(new ThresholdCheckStep(0.7))
+                    .run(0.85);
+
+            assertThat(result).contains("value=0.85");
+            assertThat(result).contains("threshold=0.7");
+            assertThat(result).contains("pass=true");
+        }
+
+        // -- All step outputs accessible --
+
+        @Test
+        void allPriorStepOutputsShouldBeInContext() {
+            AtomicReference<Object> fromA = new AtomicReference<>();
+            AtomicReference<Object> fromB = new AtomicReference<>();
+            AtomicReference<Object> fromC = new AtomicReference<>();
+
+            Workflow.<String, String>define("all-outputs")
+                    .step(Step.named("a", (ctx, in) -> "A-out"))
+                    .then(Step.named("b", (ctx, in) -> "B-out"))
+                    .then(Step.named("c", (ctx, in) -> "C-out"))
+                    .then(Step.named("reader", (ctx, in) -> {
+                        fromA.set(ctx.get(Steps.outputOf("a")).orElse(null));
+                        fromB.set(ctx.get(Steps.outputOf("b")).orElse(null));
+                        fromC.set(ctx.get(Steps.outputOf("c")).orElse(null));
+                        return in;
+                    }))
+                    .run("start");
+
+            assertThat(fromA.get()).isEqualTo("A-out");
+            assertThat(fromB.get()).isEqualTo("B-out");
+            assertThat(fromC.get()).isEqualTo("C-out");
+        }
+    }
+
+    // -------------------------------------------------------------------------
     // Edge cases
     // -------------------------------------------------------------------------
 
