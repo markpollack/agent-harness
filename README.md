@@ -1,33 +1,46 @@
 # Agent Workflow
 
-A Spring-native DSL for composing multi-step agentic pipelines. Define workflows as fluent Java chains that compile to an inspectable graph IR, execute via swappable runtimes, and record every transition for analysis.
+Build agents that work — and measure why they work.
 
-**Full documentation**: [lab.pollack.ai/projects/agent-workflow](https://lab.pollack.ai/projects/agent-workflow)
+Compose **steps** into **workflows** using a fluent Java DSL. Each step does one thing: call an LLM, run a function, invoke an external agent. Quality gates evaluate output at each stage. Every step transition is traced for behavioral analysis — so you can answer: *which steps should be deterministic instead of LLM-driven? What knowledge is the agent missing? Does it need better real-time steering?*
+
+The workflow compiles to a **graph intermediate representation** that separates definition from execution, enabling portable runtimes without changing workflow code.
+
+**Documentation**: [lab.pollack.ai/projects/agent-workflow](https://lab.pollack.ai/projects/agent-workflow)
 
 ## Quick Example
 
 ```java
-String result = Workflow.<String, String>define("pr-review")
-        .step(fetchDiff)
-        .then(analyzeDiff)
-        .branch(output -> ((Analysis) output).isHighRisk())
-            .then(detailedReview)
-            .otherwise(quickReview)
-        .gate(new JudgeGate<>(jury, 0.8))
-            .onPass(postComment)
-            .onFail(reviseWithFeedback)
-        .end()
-        .run(prEvent);
+Workflow.define("pr-review")
+    .step(fetchDiff)
+    .then(analyzeDiff)
+    .gate(new JudgeGate(jury, 0.8))
+        .onPass(postComment)
+        .onFail(revise)
+    .end()
+    .run(event);
 ```
 
-## What It Does
+## Steps
 
-- **Fluent DSL** — `step`, `then`, `branch`, `repeatUntil`, `repeatUntilOutput`, `parallel`, `decision`, `gate`, `supervisor`, `onError`, `terminate`
-- **Graph IR** — every workflow compiles to a `WorkflowGraph` with sealed `WorkflowNode` variants and typed `EdgeCondition` edges. Inspectable, serializable, walkable.
-- **Quality Gates** — `JudgeGate` with [spring-ai-agents-judge](https://github.com/spring-ai-community/agent-judge) integration, verdict feedback, reflector step
-- **Step Granularity** — a `Step` is a full agentic loop (minutes of execution, dozens of LLM calls), not a single API call
-- **Swappable Runtime** — `LocalStepRunner` (default), `CheckpointingStepRunner` (JDBC crash recovery), `TemporalStepRunner` (distributed) — same workflow code, different `@Bean`
-- **Context** — type-safe `ContextKey<T>` entries, auto-propagation via `Steps.outputOf()`, step metadata via `updateContext()`
+Steps are the building blocks. Each takes input, does work, produces output:
+
+- **Deterministic** — a Java function (API call, parsing, formatting)
+- **Single LLM call** — `ChatClientStep` wraps a [Spring AI](https://spring.io/projects/spring-ai) `ChatClient`
+- **Agentic session** — `ClaudeStep` runs a full multi-turn agent loop (dozens of tool calls, minutes of execution) and returns a typed result. The workflow sees it as one step.
+
+## DSL Primitives
+
+`step` · `then` · `branch` · `repeatUntil` · `repeatUntilOutput` · `parallel` · `decision` · `gate` · `supervisor` · `onError` · `terminate`
+
+## Why a Graph
+
+The workflow definition is pure data — nodes and edges, not opaque lambdas. This enables:
+
+- **Portable runtimes** — `LocalStepRunner` (in-process, zero overhead), `CheckpointingStepRunner` (JDBC crash recovery), `TemporalStepRunner` (distributed durable execution). Same workflow code, swap a `@Bean`.
+- **Tracing** — every step transition recorded for observability and behavioral analysis
+- **Quality gates** — `JudgeGate` evaluates output mid-pipeline, routes to retry with verdict feedback
+- **Inspection** — the compiled graph is serializable, walkable, visualizable
 
 ## Build
 
