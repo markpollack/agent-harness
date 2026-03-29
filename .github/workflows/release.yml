@@ -11,8 +11,11 @@ on:
 jobs:
   release:
     uses: markpollack/build-tools/.github/workflows/maven-central-release.yml@main
+    permissions:
+      contents: write
     with:
       version: ${{ inputs.version }}
+      java-version: '21'
     secrets:
       MAVEN_USERNAME: ${{ secrets.MAVEN_USERNAME }}
       MAVEN_PASSWORD: ${{ secrets.MAVEN_PASSWORD }}
