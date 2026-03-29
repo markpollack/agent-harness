@@ -1,0 +1,217 @@
+/*
+ * Copyright 2024-2026 Mark Pollack
+ *
+ * Licensed under the Business Source License 1.1 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      https://mariadb.com/bsl11/
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package io.github.markpollack.workflow.flows;
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.NoSuchElementException;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.UUID;
+
+/**
+ * The ambient metadata carrier threaded through every {@link Step} execution.
+ * <p>
+ * Carries framework well-known keys (run identity, iteration count, accumulated cost)
+ * plus arbitrary user-defined keys — all type-safe via {@link ContextKey}.
+ * <p>
+ * Immutable: mutations produce a new instance via {@link #mutate()}.
+ * The {@code WorkflowExecutor} merges parallel branch results at join time;
+ * steps never write to a shared mutable context.
+ * <p>
+ * Create with {@link #create()} for a new run, or {@link #withRunId(String)} when
+ * a specific identifier is needed (e.g., for traceability with an external job ID).
+ */
+public final class AgentContext {
+
+    // -------------------------------------------------------------------------
+    // Framework well-known keys
+    // -------------------------------------------------------------------------
+
+    /** Unique identifier for this workflow execution. */
+    public static final ContextKey<String> WORKFLOW_RUN_ID =
+            ContextKey.of("workflowRunId", String.class);
+
+    /** Name of the workflow being executed. */
+    public static final ContextKey<String> WORKFLOW_NAME =
+            ContextKey.of("workflowName", String.class);
+
+    /** Name of the currently executing step. */
+    public static final ContextKey<String> CURRENT_STEP =
+            ContextKey.of("currentStep", String.class);
+
+    /** Number of loop iterations completed (for repeatUntil loops). */
+    public static final ContextKey<Integer> ITERATION_COUNT =
+            ContextKey.of("iterationCount", Integer.class);
+
+    /** Total USD cost accumulated across all steps in this run. */
+    public static final ContextKey<Double> ACCUMULATED_COST =
+            ContextKey.of("accumulatedCost", Double.class);
+
+    /** Total tokens consumed across all steps in this run. */
+    public static final ContextKey<Long> ACCUMULATED_TOKENS =
+            ContextKey.of("accumulatedTokens", Long.class);
+
+    /** Judge verdict from a failed JudgeGate evaluation. The retry step reads this for feedback. */
+    public static final ContextKey<Object> JUDGE_VERDICT =
+            ContextKey.of("judgeVerdict", Object.class);
+
+    /** Reflector-generated feedback text from a failed JudgeGate evaluation. */
+    public static final ContextKey<String> JUDGE_REFLECTION =
+            ContextKey.of("judgeReflection", String.class);
+
+    // -------------------------------------------------------------------------
+    // Internal state
+    // -------------------------------------------------------------------------
+
+    private final Map<ContextKey<?>, Object> entries;
+
+    private AgentContext(Map<ContextKey<?>, Object> entries) {
+        this.entries = Map.copyOf(entries);
+    }
+
+    // -------------------------------------------------------------------------
+    // Factory methods
+    // -------------------------------------------------------------------------
+
+    /**
+     * Creates a new context with a random run ID and no other entries.
+     *
+     * @return a new AgentContext
+     */
+    public static AgentContext create() {
+        return new AgentContext(Map.of(WORKFLOW_RUN_ID, UUID.randomUUID().toString()));
+    }
+
+    /**
+     * Creates a new context with the given run ID and no other entries.
+     *
+     * @param runId the run identifier
+     * @return a new AgentContext
+     */
+    public static AgentContext withRunId(String runId) {
+        Objects.requireNonNull(runId, "runId must not be null");
+        return new AgentContext(Map.of(WORKFLOW_RUN_ID, runId));
+    }
+
+    // -------------------------------------------------------------------------
+    // Type-safe access
+    // -------------------------------------------------------------------------
+
+    /**
+     * Returns the value associated with the given key, if present.
+     *
+     * @param key the context key
+     * @param <T> the value type
+     * @return an Optional containing the value, or empty if absent
+     */
+    public <T> Optional<T> get(ContextKey<T> key) {
+        Object value = entries.get(key);
+        if (value == null) {
+            return Optional.empty();
+        }
+        return Optional.of(key.type().cast(value));
+    }
+
+    /**
+     * Returns the value associated with the given key, or throws if absent.
+     *
+     * @param key the context key
+     * @param <T> the value type
+     * @return the value
+     * @throws NoSuchElementException if the key is not present
+     */
+    public <T> T require(ContextKey<T> key) {
+        return get(key).orElseThrow(() ->
+                new NoSuchElementException("Required context key not present: " + key));
+    }
+
+    // -------------------------------------------------------------------------
+    // Convenience accessors
+    // -------------------------------------------------------------------------
+
+    /**
+     * Returns the run identifier for this execution.
+     *
+     * @return the run ID
+     */
+    public String runId() {
+        return require(WORKFLOW_RUN_ID);
+    }
+
+    // -------------------------------------------------------------------------
+    // Immutable mutation
+    // -------------------------------------------------------------------------
+
+    /**
+     * Returns a builder pre-populated with all entries from this context.
+     * Modifications on the builder produce a new {@code AgentContext};
+     * this instance is unchanged.
+     *
+     * @return a new Builder
+     */
+    public Builder mutate() {
+        return new Builder(new HashMap<>(entries));
+    }
+
+    // -------------------------------------------------------------------------
+    // Builder
+    // -------------------------------------------------------------------------
+
+    /**
+     * Builder for constructing {@link AgentContext} instances.
+     * <p>
+     * Follows Spring AI's {@code ChatClientRequest.mutate()} pattern:
+     * immutable copy-with via builder.
+     */
+    public static final class Builder {
+
+        private final Map<ContextKey<?>, Object> entries;
+
+        private Builder(Map<ContextKey<?>, Object> entries) {
+            this.entries = entries;
+        }
+
+        /**
+         * Sets a typed key-value pair in the context being built.
+         *
+         * @param key   the context key
+         * @param value the value
+         * @param <T>   the value type
+         * @return this builder
+         */
+        public <T> Builder with(ContextKey<T> key, T value) {
+            Objects.requireNonNull(key, "key must not be null");
+            Objects.requireNonNull(value, "value must not be null");
+            entries.put(key, value);
+            return this;
+        }
+
+        /**
+         * Builds and returns a new immutable {@link AgentContext}.
+         *
+         * @return the built context
+         */
+        public AgentContext build() {
+            return new AgentContext(entries);
+        }
+    }
+
+    @Override
+    public String toString() {
+        return "AgentContext[runId=" + get(WORKFLOW_RUN_ID).orElse("(none)") + ", keys=" + entries.keySet() + "]";
+    }
+}
