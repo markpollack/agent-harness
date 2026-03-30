@@ -238,7 +238,7 @@
                         <configuration>
                             <publishingServerId>central</publishingServerId>
                             <autoPublish>true</autoPublish>
-                            <excludeArtifacts>agent-workflow-parent,workflow-examples</excludeArtifacts>
+                            <excludeArtifacts>workflow-examples</excludeArtifacts>
                         </configuration>
                     </plugin>
 
