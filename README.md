@@ -1,12 +1,33 @@
 # Agent Workflow
 
-Build agents that work — and measure why they work.
+Composable agentic pipeline patterns for Spring AI — steps, typed context, branching, loops, quality gates.
 
 Compose **steps** into **workflows** using a fluent Java DSL. Each step does one thing: call an LLM, run a function, invoke an external agent. Quality gates evaluate output at each stage. Every step transition is traced for behavioral analysis — so you can answer: *which steps should be deterministic instead of LLM-driven? What knowledge is the agent missing? Does it need better real-time steering?*
 
 The workflow compiles to a **graph intermediate representation** that separates definition from execution, enabling portable runtimes without changing workflow code.
 
 **Documentation**: [lab.pollack.ai/projects/agent-workflow](https://lab.pollack.ai/projects/agent-workflow)
+
+## Coordinates
+
+```xml
+<dependency>
+    <groupId>io.github.markpollack</groupId>
+    <artifactId>workflow-core</artifactId>
+    <version>0.1.0</version>
+</dependency>
+```
+
+## Modules
+
+| Module | Description |
+|--------|-------------|
+| `workflow-api` | Core interfaces: `Step`, `AgentContext`, `ContextKey` |
+| `workflow-core` | Workflow DSL, graph IR, executor, edge conditions |
+| `workflow-tools` | Agent tools (Bash, Read, Write, Edit, Glob, Grep) |
+| `workflow-flows` | Built-in flow patterns (sequential, parallel, loop) |
+| `workflow-agents` | Ready-to-use agents (MiniAgent, ClaudeStep) |
+| `workflow-examples` | Example workflows and usage patterns |
 
 ## Quick Example
 
