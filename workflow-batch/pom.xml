@@ -29,6 +29,22 @@
             <optional>true</optional>
         </dependency>
 
+        <!-- Spring Data JPA for repositories (optional — only needed if using CheckpointingStepRunner) -->
+        <dependency>
+            <groupId>org.springframework.data</groupId>
+            <artifactId>spring-data-jpa</artifactId>
+            <version>3.4.4</version>
+            <optional>true</optional>
+        </dependency>
+
+        <!-- Spring TX for @Transactional on repositories -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-tx</artifactId>
+            <version>6.2.5</version>
+            <optional>true</optional>
+        </dependency>
+
         <!-- Jackson for output serialization -->
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
@@ -55,6 +71,26 @@
         <dependency>
             <groupId>ch.qos.logback</groupId>
             <artifactId>logback-classic</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Spring Boot Test slice for @DataJpaTest -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <version>3.4.4</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+            <version>3.4.4</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- H2 in-memory database for tests -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <version>2.3.232</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
