@@ -15,7 +15,7 @@
  */
 package io.github.markpollack.workflow.patterns.graph;
 
-import io.github.markpollack.workflow.core.AgentLoop;
+import io.github.markpollack.workflow.core.LoopPattern;
 import io.github.markpollack.workflow.core.LoopResult;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.tool.ToolCallback;
@@ -24,7 +24,7 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * A graph node that wraps an existing AgentLoop.
+ * A graph node that wraps an existing LoopPattern.
  * <p>
  * This enables composition of loop patterns within a graph structure.
  * The input to this node is used as the user message for the wrapped loop.
@@ -41,7 +41,7 @@ import java.util.Objects;
 public final class LoopGraphNode<R extends LoopResult> implements GraphNode<String, R> {
 
     private final String name;
-    private final AgentLoop<R> loop;
+    private final LoopPattern<R> loop;
     private final ChatClient chatClient;
     private final List<ToolCallback> tools;
 
@@ -49,13 +49,13 @@ public final class LoopGraphNode<R extends LoopResult> implements GraphNode<Stri
      * Creates a new loop-wrapping graph node.
      *
      * @param name the node name (must be unique within graph)
-     * @param loop the AgentLoop to execute
+     * @param loop the LoopPattern to execute
      * @param chatClient the ChatClient for the loop
      * @param tools the tools available to the loop
      */
     public LoopGraphNode(
             String name,
-            AgentLoop<R> loop,
+            LoopPattern<R> loop,
             ChatClient chatClient,
             List<ToolCallback> tools) {
         this.name = Objects.requireNonNull(name, "name must not be null");
@@ -75,11 +75,11 @@ public final class LoopGraphNode<R extends LoopResult> implements GraphNode<Stri
     }
 
     /**
-     * Returns the wrapped AgentLoop.
+     * Returns the wrapped LoopPattern.
      *
      * @return the loop
      */
-    public AgentLoop<R> loop() {
+    public LoopPattern<R> loop() {
         return loop;
     }
 

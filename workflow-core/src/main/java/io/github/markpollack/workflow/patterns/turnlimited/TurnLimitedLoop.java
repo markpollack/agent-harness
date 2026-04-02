@@ -15,7 +15,7 @@
  */
 package io.github.markpollack.workflow.patterns.turnlimited;
 
-import io.github.markpollack.workflow.core.AgentLoop;
+import io.github.markpollack.workflow.core.LoopPattern;
 import io.github.markpollack.workflow.core.LoopState;
 import io.github.markpollack.workflow.core.TerminationReason;
 import io.github.markpollack.workflow.core.ToolCallListener;
@@ -52,7 +52,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *   <li>Repeat</li>
  * </ol>
  */
-public class TurnLimitedLoop implements AgentLoop<TurnLimitedResult> {
+public class TurnLimitedLoop implements LoopPattern<TurnLimitedResult> {
 
     private static final Logger log = LoggerFactory.getLogger(TurnLimitedLoop.class);
 

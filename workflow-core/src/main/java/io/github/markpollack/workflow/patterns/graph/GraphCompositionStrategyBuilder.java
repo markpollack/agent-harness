@@ -15,7 +15,7 @@
  */
 package io.github.markpollack.workflow.patterns.graph;
 
-import io.github.markpollack.workflow.core.AgentLoop;
+import io.github.markpollack.workflow.core.LoopPattern;
 import io.github.markpollack.workflow.core.LoopResult;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.tool.ToolCallback;
@@ -144,10 +144,10 @@ public final class GraphCompositionStrategyBuilder<I, O> {
     }
 
     /**
-     * Adds a node that wraps an AgentLoop.
+     * Adds a node that wraps a LoopPattern.
      *
      * @param nodeName the unique name for this node
-     * @param loop the AgentLoop to wrap
+     * @param loop the LoopPattern to wrap
      * @param chatClient the ChatClient for the loop
      * @param tools the tools available to the loop
      * @param <R> the loop result type
@@ -155,7 +155,7 @@ public final class GraphCompositionStrategyBuilder<I, O> {
      */
     public <R extends LoopResult> GraphCompositionStrategyBuilder<I, O> loopNode(
             String nodeName,
-            AgentLoop<R> loop,
+            LoopPattern<R> loop,
             ChatClient chatClient,
             List<ToolCallback> tools) {
         Objects.requireNonNull(nodeName, "nodeName must not be null");

@@ -12,7 +12,7 @@
 
     <artifactId>workflow-agents</artifactId>
     <name>Workflow Agents</name>
-    <description>Ready-to-use agent implementations including MiniAgent</description>
+    <description>Ready-to-use agent implementations including AgentLoop</description>
 
     <dependencies>
         <!-- Internal modules -->

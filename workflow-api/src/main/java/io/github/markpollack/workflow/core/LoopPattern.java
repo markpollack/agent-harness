@@ -54,7 +54,7 @@ import java.util.List;
  *
  * @param <R> The specific result type this loop returns (must implement LoopResult)
  */
-public interface AgentLoop<R extends LoopResult> {
+public interface LoopPattern<R extends LoopResult> {
 
     /**
      * Executes the loop with the given prompt.

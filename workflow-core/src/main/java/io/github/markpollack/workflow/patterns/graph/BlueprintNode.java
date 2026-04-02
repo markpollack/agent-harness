@@ -15,7 +15,7 @@
  */
 package io.github.markpollack.workflow.patterns.graph;
 
-import io.github.markpollack.workflow.core.AgentLoop;
+import io.github.markpollack.workflow.core.LoopPattern;
 import io.github.markpollack.workflow.core.LoopResult;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.tool.ToolCallback;
@@ -76,7 +76,7 @@ public record BlueprintNode(String name, NodeType nodeType, String description, 
      * Creates an agent-typed node from a plain function.
      * <p>
      * Use when the "agent" is an external call (REST API, AgentClient, subprocess)
-     * rather than an embedded {@link AgentLoop}. The node reports {@link NodeType#AGENT}
+     * rather than an embedded {@link LoopPattern}. The node reports {@link NodeType#AGENT}
      * so it appears correctly in metrics and visualizations, but token counts will be
      * zero (the external call handles its own accounting).
      *
@@ -113,7 +113,7 @@ public record BlueprintNode(String name, NodeType nodeType, String description, 
     }
 
     /**
-     * Creates an agent node that wraps an {@link AgentLoop}.
+     * Creates an agent node that wraps an {@link LoopPattern}.
      *
      * @param name       the node name
      * @param loop       the loop to execute
@@ -124,7 +124,7 @@ public record BlueprintNode(String name, NodeType nodeType, String description, 
      */
     public static <R extends LoopResult> BlueprintNode agent(
             String name,
-            AgentLoop<R> loop,
+            LoopPattern<R> loop,
             ChatClient chatClient,
             List<ToolCallback> tools) {
         return new BlueprintNode(name, NodeType.AGENT, "", GraphNode.fromLoop(name, loop, chatClient, tools));
@@ -144,7 +144,7 @@ public record BlueprintNode(String name, NodeType nodeType, String description, 
     public static <R extends LoopResult> BlueprintNode agent(
             String name,
             String description,
-            AgentLoop<R> loop,
+            LoopPattern<R> loop,
             ChatClient chatClient,
             List<ToolCallback> tools) {
         return new BlueprintNode(name, NodeType.AGENT, description, GraphNode.fromLoop(name, loop, chatClient, tools));

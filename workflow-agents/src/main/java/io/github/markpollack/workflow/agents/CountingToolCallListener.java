@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.github.markpollack.workflow.agents.mini;
+package io.github.markpollack.workflow.agents;
 
 import io.github.markpollack.workflow.core.ToolCallListener;
 import org.springframework.ai.chat.messages.AssistantMessage;
@@ -24,7 +24,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 /**
  * A ToolCallListener that counts tool executions and delegates to another listener.
  * <p>
- * This enables tracking toolCallsExecuted in MiniAgentResult while still
+ * This enables tracking toolCallsExecuted in AgentLoop.Result while still
  * getting logging or other behavior from the delegate.
  */
 public class CountingToolCallListener implements ToolCallListener {

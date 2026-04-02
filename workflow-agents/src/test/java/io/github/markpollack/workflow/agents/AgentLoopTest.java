@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.github.markpollack.workflow.agents.mini;
+package io.github.markpollack.workflow.agents;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -32,17 +32,17 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 
-@DisplayName("MiniAgent")
-class MiniAgentTest {
+@DisplayName("AgentLoop")
+class AgentLoopTest {
 
     @TempDir
     Path tempDir;
 
-    private MiniAgentConfig config;
+    private AgentLoop.Config config;
 
     @BeforeEach
     void setUp() {
-        config = MiniAgentConfig.builder()
+        config = AgentLoop.Config.builder()
                 .maxTurns(10)
                 .workingDirectory(tempDir)
                 .commandTimeout(Duration.ofSeconds(5))
@@ -66,9 +66,9 @@ class MiniAgentTest {
             );
 
             ChatModel chatModel = createChatModel(responses);
-            MiniAgent agent = new MiniAgent(config, chatModel);
+            AgentLoop agent = new AgentLoop(config, chatModel);
 
-            MiniAgent.MiniAgentResult result = agent.run("List files");
+            AgentLoop.Result result = agent.run("List files");
 
             // The loop should complete (may be due to no tool calls = finish)
             assertThat(result.status()).isIn("COMPLETED", "FAILED");
@@ -83,7 +83,7 @@ class MiniAgentTest {
         @DisplayName("should complete in single invocation")
         void shouldCompleteInSingleInvocation() {
             // Create config with very low turn limit
-            MiniAgentConfig limitedConfig = config.toBuilder()
+            AgentLoop.Config limitedConfig = config.toBuilder()
                     .maxTurns(2)
                     .build();
 
@@ -95,11 +95,11 @@ class MiniAgentTest {
             );
 
             ChatModel chatModel = createChatModel(responses);
-            MiniAgent agent = new MiniAgent(limitedConfig, chatModel);
+            AgentLoop agent = new AgentLoop(limitedConfig, chatModel);
 
-            MiniAgent.MiniAgentResult result = agent.run("Infinite task");
+            AgentLoop.Result result = agent.run("Infinite task");
 
-            // MiniAgent always uses 1 invocation (Spring AI handles internal loop)
+            // AgentLoop always uses 1 invocation (Spring AI handles internal loop)
             assertThat(result.turnsCompleted()).isGreaterThanOrEqualTo(0);
         }
     }
@@ -114,9 +114,9 @@ class MiniAgentTest {
             List<String> responses = List.of("Single response");
 
             ChatModel chatModel = createChatModel(responses);
-            MiniAgent agent = new MiniAgent(config, chatModel);
+            AgentLoop agent = new AgentLoop(config, chatModel);
 
-            MiniAgent.MiniAgentResult result = agent.run("Simple task");
+            AgentLoop.Result result = agent.run("Simple task");
 
             assertThat(result.turnsCompleted()).isGreaterThanOrEqualTo(0);
         }
@@ -127,22 +127,22 @@ class MiniAgentTest {
             List<String> responses = List.of("Response");
 
             ChatModel chatModel = createChatModel(responses);
-            MiniAgent agent = new MiniAgent(config, chatModel);
+            AgentLoop agent = new AgentLoop(config, chatModel);
 
-            MiniAgent.MiniAgentResult result = agent.run("Task");
+            AgentLoop.Result result = agent.run("Task");
 
             assertThat(result.totalTokens()).isGreaterThan(0);
         }
     }
 
     @Nested
-    @DisplayName("MiniAgentResult")
-    class MiniAgentResultTest {
+    @DisplayName("Result")
+    class ResultTest {
 
         @Test
         @DisplayName("isSuccess should return true for COMPLETED status")
         void isSuccessShouldReturnTrueForCompleted() {
-            MiniAgent.MiniAgentResult result = new MiniAgent.MiniAgentResult(
+            AgentLoop.Result result = new AgentLoop.Result(
                     "COMPLETED", "output", 1, 0, 100, 0.01
             );
 
@@ -153,7 +153,7 @@ class MiniAgentTest {
         @Test
         @DisplayName("isFailure should return true for FAILED status")
         void isFailureShouldReturnTrueForFailed() {
-            MiniAgent.MiniAgentResult result = new MiniAgent.MiniAgentResult(
+            AgentLoop.Result result = new AgentLoop.Result(
                     "FAILED", null, 0, 0, 0, 0.0
             );
 
@@ -164,7 +164,7 @@ class MiniAgentTest {
         @Test
         @DisplayName("TURN_LIMIT_REACHED should not be success or failure")
         void turnLimitReachedShouldNotBeSuccessOrFailure() {
-            MiniAgent.MiniAgentResult result = new MiniAgent.MiniAgentResult(
+            AgentLoop.Result result = new AgentLoop.Result(
                     "TURN_LIMIT_REACHED", "partial output", 3, 5, 500, 0.003
             );
 
@@ -184,7 +184,7 @@ class MiniAgentTest {
         void shouldBuildAgentWithBuilder() {
             ChatModel chatModel = createChatModel(List.of("response"));
 
-            MiniAgent agent = MiniAgent.builder()
+            AgentLoop agent = AgentLoop.builder()
                     .config(config)
                     .model(chatModel)
                     .build();
@@ -199,7 +199,7 @@ class MiniAgentTest {
         void shouldBuildAgentWithSessionMemory() {
             ChatModel chatModel = createChatModel(List.of("response"));
 
-            MiniAgent agent = MiniAgent.builder()
+            AgentLoop agent = AgentLoop.builder()
                     .config(config)
                     .model(chatModel)
                     .sessionMemory()
@@ -213,7 +213,7 @@ class MiniAgentTest {
         void shouldBuildAgentWithInteractiveMode() {
             ChatModel chatModel = createChatModel(List.of("response"));
 
-            MiniAgent agent = MiniAgent.builder()
+            AgentLoop agent = AgentLoop.builder()
                     .config(config)
                     .model(chatModel)
                     .interactive(true)
@@ -228,7 +228,7 @@ class MiniAgentTest {
         void shouldBuildAgentWithConversationId() {
             ChatModel chatModel = createChatModel(List.of("response"));
 
-            MiniAgent agent = MiniAgent.builder()
+            AgentLoop agent = AgentLoop.builder()
                     .config(config)
                     .model(chatModel)
                     .sessionMemory()
@@ -248,7 +248,7 @@ class MiniAgentTest {
         void hasSessionMemoryShouldReturnFalseWhenNotConfigured() {
             ChatModel chatModel = createChatModel(List.of("response"));
 
-            MiniAgent agent = MiniAgent.builder()
+            AgentLoop agent = AgentLoop.builder()
                     .config(config)
                     .model(chatModel)
                     .build();
@@ -261,7 +261,7 @@ class MiniAgentTest {
         void hasSessionMemoryShouldReturnTrueWhenConfigured() {
             ChatModel chatModel = createChatModel(List.of("response"));
 
-            MiniAgent agent = MiniAgent.builder()
+            AgentLoop agent = AgentLoop.builder()
                     .config(config)
                     .model(chatModel)
                     .sessionMemory()
@@ -275,7 +275,7 @@ class MiniAgentTest {
         void clearSessionShouldNotThrowWhenNoMemory() {
             ChatModel chatModel = createChatModel(List.of("response"));
 
-            MiniAgent agent = MiniAgent.builder()
+            AgentLoop agent = AgentLoop.builder()
                     .config(config)
                     .model(chatModel)
                     .build();
@@ -288,7 +288,7 @@ class MiniAgentTest {
         void clearSessionShouldClearMemory() {
             ChatModel chatModel = createChatModel(List.of("response"));
 
-            MiniAgent agent = MiniAgent.builder()
+            AgentLoop agent = AgentLoop.builder()
                     .config(config)
                     .model(chatModel)
                     .sessionMemory()
@@ -307,7 +307,7 @@ class MiniAgentTest {
         void isInteractiveShouldReturnFalseWhenNotConfigured() {
             ChatModel chatModel = createChatModel(List.of("response"));
 
-            MiniAgent agent = MiniAgent.builder()
+            AgentLoop agent = AgentLoop.builder()
                     .config(config)
                     .model(chatModel)
                     .build();
@@ -320,7 +320,7 @@ class MiniAgentTest {
         void isInteractiveShouldReturnTrueWhenConfigured() {
             ChatModel chatModel = createChatModel(List.of("response"));
 
-            MiniAgent agent = MiniAgent.builder()
+            AgentLoop agent = AgentLoop.builder()
                     .config(config)
                     .model(chatModel)
                     .interactive(true)
@@ -343,7 +343,7 @@ class MiniAgentTest {
                 }
             };
 
-            MiniAgent agent = MiniAgent.builder()
+            AgentLoop agent = AgentLoop.builder()
                     .config(config)
                     .model(chatModel)
                     .agentCallback(callback)
@@ -367,7 +367,7 @@ class MiniAgentTest {
                 }
             };
 
-            MiniAgent agent = MiniAgent.builder()
+            AgentLoop agent = AgentLoop.builder()
                     .config(config)
                     .model(chatModel)
                     .agentCallback(callback)
@@ -396,7 +396,7 @@ class MiniAgentTest {
                 }
             };
 
-            MiniAgent agent = MiniAgent.builder()
+            AgentLoop agent = AgentLoop.builder()
                     .config(config)
                     .model(chatModel)
                     .agentCallback(callback)
@@ -412,7 +412,7 @@ class MiniAgentTest {
         void chatShouldNotThrowWhenCallbackIsNull() {
             ChatModel chatModel = createChatModel(List.of("response"));
 
-            MiniAgent agent = MiniAgent.builder()
+            AgentLoop agent = AgentLoop.builder()
                     .config(config)
                     .model(chatModel)
                     .build();

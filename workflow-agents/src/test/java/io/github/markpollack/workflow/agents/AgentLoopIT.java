@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.github.markpollack.workflow.agents.mini;
+package io.github.markpollack.workflow.agents;
 
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -37,7 +37,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.fail;
 
 /**
- * Integration tests for MiniAgent using the Anthropic API directly.
+ * Integration tests for AgentLoop using the Anthropic API directly.
  * <p>
  * <strong>Note</strong>: This test class uses {@code AnthropicChatModel} (Spring AI) which
  * requires {@code ANTHROPIC_API_KEY}. New LLM integration tests should use
@@ -46,10 +46,10 @@ import static org.junit.jupiter.api.Assertions.fail;
  * <p>
  * Skipped automatically when {@code ANTHROPIC_API_KEY} is not set.
  */
-@Disabled("MiniAgent superseded by loopy project. ClaudeStep is the replacement for LLM integration.")
-@DisplayName("MiniAgent Integration Tests")
+@Disabled("AgentLoop IT superseded by loopy project. ClaudeStep is the replacement for LLM integration.")
+@DisplayName("AgentLoop Integration Tests")
 @EnabledIfEnvironmentVariable(named = "ANTHROPIC_API_KEY", matches = ".+")
-class MiniAgentIT {
+class AgentLoopIT {
 
     @BeforeAll
     static void validateApiKey() {
@@ -84,7 +84,7 @@ class MiniAgentIT {
     Path tempDir;
 
     private ChatModel chatModel;
-    private MiniAgentConfig config;
+    private AgentLoop.Config config;
 
     @BeforeEach
     void setUp() {
@@ -92,7 +92,7 @@ class MiniAgentIT {
         // AnthropicApi was removed in 2.0-M3; this test is @Disabled.
         chatModel = null;
 
-        config = MiniAgentConfig.builder()
+        config = AgentLoop.Config.builder()
                 .maxTurns(5)
                 .workingDirectory(tempDir)
                 .commandTimeout(Duration.ofSeconds(30))
@@ -110,8 +110,8 @@ class MiniAgentIT {
             Files.writeString(tempDir.resolve("file1.txt"), "content1");
             Files.writeString(tempDir.resolve("file2.txt"), "content2");
 
-            MiniAgent agent = new MiniAgent(config, chatModel);
-            MiniAgent.MiniAgentResult result = agent.run(
+            AgentLoop agent = new AgentLoop(config, chatModel);
+            AgentLoop.Result result = agent.run(
                     "List all files in the current directory and tell me how many there are. " +
                     "Submit your answer when done."
             );
@@ -128,8 +128,8 @@ class MiniAgentIT {
             String expectedContent = "Hello from integration test!";
             Files.writeString(tempDir.resolve("test.txt"), expectedContent);
 
-            MiniAgent agent = new MiniAgent(config, chatModel);
-            MiniAgent.MiniAgentResult result = agent.run(
+            AgentLoop agent = new AgentLoop(config, chatModel);
+            AgentLoop.Result result = agent.run(
                     "Read the contents of test.txt and tell me what it says. " +
                     "Submit your answer when done."
             );
@@ -141,9 +141,9 @@ class MiniAgentIT {
         @Test
         @DisplayName("should create a file")
         void shouldCreateFile() {
-            MiniAgent agent = new MiniAgent(config, chatModel);
-            MiniAgent.MiniAgentResult result = agent.run(
-                    "Create a file named 'created.txt' with the content 'Created by MiniAgent'. " +
+            AgentLoop agent = new AgentLoop(config, chatModel);
+            AgentLoop.Result result = agent.run(
+                    "Create a file named 'created.txt' with the content 'Created by AgentLoop'. " +
                     "Submit 'done' when the file has been created."
             );
 
@@ -162,8 +162,8 @@ class MiniAgentIT {
             // Create initial file
             Files.writeString(tempDir.resolve("input.txt"), "line1\nline2\nline3");
 
-            MiniAgent agent = new MiniAgent(config, chatModel);
-            MiniAgent.MiniAgentResult result = agent.run(
+            AgentLoop agent = new AgentLoop(config, chatModel);
+            AgentLoop.Result result = agent.run(
                     "1. Read input.txt\n" +
                     "2. Count the number of lines\n" +
                     "3. Create output.txt with the line count\n" +
@@ -183,8 +183,8 @@ class MiniAgentIT {
         @Test
         @DisplayName("should track tokens used")
         void shouldTrackTokens() {
-            MiniAgent agent = new MiniAgent(config, chatModel);
-            MiniAgent.MiniAgentResult result = agent.run(
+            AgentLoop agent = new AgentLoop(config, chatModel);
+            AgentLoop.Result result = agent.run(
                     "What is 2+2? Submit the answer."
             );
 
@@ -195,12 +195,12 @@ class MiniAgentIT {
         @Test
         @DisplayName("should respect turn limits and return TURN_LIMIT_REACHED status")
         void shouldRespectTurnLimits() {
-            MiniAgentConfig limitedConfig = config.toBuilder()
+            AgentLoop.Config limitedConfig = config.toBuilder()
                     .maxTurns(2)
                     .build();
 
-            MiniAgent agent = new MiniAgent(limitedConfig, chatModel);
-            MiniAgent.MiniAgentResult result = agent.run(
+            AgentLoop agent = new AgentLoop(limitedConfig, chatModel);
+            AgentLoop.Result result = agent.run(
                     "Explore the filesystem extensively, looking at every directory. " +
                     "Never submit until you've seen everything."
             );
@@ -221,12 +221,12 @@ class MiniAgentIT {
         @Test
         @DisplayName("should work with builder pattern")
         void shouldWorkWithBuilder() {
-            MiniAgent agent = MiniAgent.builder()
+            AgentLoop agent = AgentLoop.builder()
                     .config(config)
                     .model(chatModel)
                     .build();
 
-            MiniAgent.MiniAgentResult result = agent.run("What is 1+1? Reply with just the number.");
+            AgentLoop.Result result = agent.run("What is 1+1? Reply with just the number.");
 
             assertThat(result.status()).isIn("COMPLETED", "TURN_LIMIT_REACHED");
             assertThat(result.totalTokens()).isGreaterThan(0);
@@ -235,7 +235,7 @@ class MiniAgentIT {
         @Test
         @DisplayName("should work with session memory enabled")
         void shouldWorkWithSessionMemory() {
-            MiniAgent agent = MiniAgent.builder()
+            AgentLoop agent = AgentLoop.builder()
                     .config(config)
                     .model(chatModel)
                     .sessionMemory()
@@ -243,7 +243,7 @@ class MiniAgentIT {
 
             assertThat(agent.hasSessionMemory()).isTrue();
 
-            MiniAgent.MiniAgentResult result = agent.run("What is 2+2? Reply with just the number.");
+            AgentLoop.Result result = agent.run("What is 2+2? Reply with just the number.");
             assertThat(result.status()).isIn("COMPLETED", "TURN_LIMIT_REACHED");
         }
     }
@@ -255,21 +255,21 @@ class MiniAgentIT {
         @Test
         @DisplayName("should preserve context across chat calls")
         void shouldPreserveContextAcrossChatCalls() {
-            MiniAgent agent = MiniAgent.builder()
+            AgentLoop agent = AgentLoop.builder()
                     .config(config)
                     .model(chatModel)
                     .sessionMemory()
                     .build();
 
             // First call - establish context
-            MiniAgent.MiniAgentResult result1 = agent.chat(
+            AgentLoop.Result result1 = agent.chat(
                     "Remember this number: 42. Just say 'OK' to confirm.",
                     null
             );
             assertThat(result1.status()).isIn("COMPLETED", "TURN_LIMIT_REACHED");
 
             // Second call - reference previous context
-            MiniAgent.MiniAgentResult result2 = agent.chat(
+            AgentLoop.Result result2 = agent.chat(
                     "What number did I ask you to remember? Reply with just the number.",
                     null
             );
@@ -281,7 +281,7 @@ class MiniAgentIT {
         @Test
         @DisplayName("should clear session when clearSession called")
         void shouldClearSession() {
-            MiniAgent agent = MiniAgent.builder()
+            AgentLoop agent = AgentLoop.builder()
                     .config(config)
                     .model(chatModel)
                     .sessionMemory()
@@ -294,7 +294,7 @@ class MiniAgentIT {
             agent.clearSession();
 
             // After clear, context should be lost
-            MiniAgent.MiniAgentResult result = agent.chat(
+            AgentLoop.Result result = agent.chat(
                     "What is my favorite color? If you don't know, say 'unknown'.",
                     null
             );
@@ -319,7 +319,7 @@ class MiniAgentIT {
                 }
             };
 
-            MiniAgent agent = MiniAgent.builder()
+            AgentLoop agent = AgentLoop.builder()
                     .config(config)
                     .model(chatModel)
                     .agentCallback(callback)
@@ -341,7 +341,7 @@ class MiniAgentIT {
                 }
             };
 
-            MiniAgent agent = MiniAgent.builder()
+            AgentLoop agent = AgentLoop.builder()
                     .config(config)
                     .model(chatModel)
                     .agentCallback(callback)
@@ -371,7 +371,7 @@ class MiniAgentIT {
                 }
             };
 
-            MiniAgent agent = MiniAgent.builder()
+            AgentLoop agent = AgentLoop.builder()
                     .config(config)
                     .model(chatModel)
                     .agentCallback(callback)

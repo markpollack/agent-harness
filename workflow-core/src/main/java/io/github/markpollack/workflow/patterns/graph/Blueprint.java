@@ -15,7 +15,7 @@
  */
 package io.github.markpollack.workflow.patterns.graph;
 
-import io.github.markpollack.workflow.core.AgentLoop;
+import io.github.markpollack.workflow.core.LoopPattern;
 import io.github.markpollack.workflow.core.LoopResult;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.tool.ToolCallback;
@@ -175,7 +175,7 @@ public final class Blueprint<I, O> {
          * Adds an agent-typed node backed by a plain function.
          * <p>
          * Use when the agent call is external (REST, AgentClient, subprocess) rather
-         * than an embedded {@link io.github.markpollack.workflow.core.AgentLoop}.
+         * than an embedded {@link io.github.markpollack.workflow.core.LoopPattern}.
          * The node reports {@link NodeType#AGENT} in metrics and visualization.
          *
          * @param nodeName    the unique node name
@@ -210,7 +210,7 @@ public final class Blueprint<I, O> {
          * Adds an agent node.
          *
          * @param nodeName   the unique node name
-         * @param loop       the AgentLoop to execute
+         * @param loop       the LoopPattern to execute
          * @param chatClient the ChatClient for the loop
          * @param tools      the tools available to the loop
          * @param <R>        the loop result type
@@ -218,7 +218,7 @@ public final class Blueprint<I, O> {
          */
         public <R extends LoopResult> BlueprintBuilder<I, O> agent(
                 String nodeName,
-                AgentLoop<R> loop,
+                LoopPattern<R> loop,
                 ChatClient chatClient,
                 List<ToolCallback> tools) {
             nodes.add(BlueprintNode.agent(nodeName, loop, chatClient, tools));
@@ -230,7 +230,7 @@ public final class Blueprint<I, O> {
          *
          * @param nodeName    the unique node name
          * @param description human-readable purpose of this node
-         * @param loop        the AgentLoop to execute
+         * @param loop        the LoopPattern to execute
          * @param chatClient  the ChatClient for the loop
          * @param tools       the tools available to the loop
          * @param <R>         the loop result type
@@ -239,7 +239,7 @@ public final class Blueprint<I, O> {
         public <R extends LoopResult> BlueprintBuilder<I, O> agent(
                 String nodeName,
                 String description,
-                AgentLoop<R> loop,
+                LoopPattern<R> loop,
                 ChatClient chatClient,
                 List<ToolCallback> tools) {
             nodes.add(BlueprintNode.agent(nodeName, description, loop, chatClient, tools));

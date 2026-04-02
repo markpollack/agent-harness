@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.github.markpollack.workflow.agents.mini;
+package io.github.markpollack.workflow.agents;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -25,8 +25,8 @@ import java.time.Duration;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-@DisplayName("MiniAgentConfig")
-class MiniAgentConfigTest {
+@DisplayName("AgentLoop.Config")
+class AgentLoopConfigTest {
 
     @Nested
     @DisplayName("Builder defaults")
@@ -35,28 +35,28 @@ class MiniAgentConfigTest {
         @Test
         @DisplayName("should have default max turns of 20")
         void shouldHaveDefaultMaxTurns() {
-            MiniAgentConfig config = MiniAgentConfig.builder().build();
+            AgentLoop.Config config = AgentLoop.Config.builder().build();
             assertThat(config.maxTurns()).isEqualTo(20);
         }
 
         @Test
         @DisplayName("should have default cost limit of 1.0")
         void shouldHaveDefaultCostLimit() {
-            MiniAgentConfig config = MiniAgentConfig.builder().build();
+            AgentLoop.Config config = AgentLoop.Config.builder().build();
             assertThat(config.costLimit()).isEqualTo(1.0);
         }
 
         @Test
         @DisplayName("should have default command timeout of 30 seconds")
         void shouldHaveDefaultCommandTimeout() {
-            MiniAgentConfig config = MiniAgentConfig.builder().build();
+            AgentLoop.Config config = AgentLoop.Config.builder().build();
             assertThat(config.commandTimeout()).isEqualTo(Duration.ofSeconds(30));
         }
 
         @Test
         @DisplayName("should have default system prompt")
         void shouldHaveDefaultSystemPrompt() {
-            MiniAgentConfig config = MiniAgentConfig.builder().build();
+            AgentLoop.Config config = AgentLoop.Config.builder().build();
             assertThat(config.systemPrompt()).contains("autonomous AI assistant");
             assertThat(config.systemPrompt()).contains("bash");
         }
@@ -64,7 +64,7 @@ class MiniAgentConfigTest {
         @Test
         @DisplayName("should use current directory as default working directory")
         void shouldUseCurrentDirectoryAsDefault() {
-            MiniAgentConfig config = MiniAgentConfig.builder().build();
+            AgentLoop.Config config = AgentLoop.Config.builder().build();
             assertThat(config.workingDirectory()).isEqualTo(Path.of(System.getProperty("user.dir")));
         }
     }
@@ -76,7 +76,7 @@ class MiniAgentConfigTest {
         @Test
         @DisplayName("should set max turns")
         void shouldSetMaxTurns() {
-            MiniAgentConfig config = MiniAgentConfig.builder()
+            AgentLoop.Config config = AgentLoop.Config.builder()
                     .maxTurns(50)
                     .build();
             assertThat(config.maxTurns()).isEqualTo(50);
@@ -85,7 +85,7 @@ class MiniAgentConfigTest {
         @Test
         @DisplayName("should set cost limit")
         void shouldSetCostLimit() {
-            MiniAgentConfig config = MiniAgentConfig.builder()
+            AgentLoop.Config config = AgentLoop.Config.builder()
                     .costLimit(5.0)
                     .build();
             assertThat(config.costLimit()).isEqualTo(5.0);
@@ -94,7 +94,7 @@ class MiniAgentConfigTest {
         @Test
         @DisplayName("should set command timeout")
         void shouldSetCommandTimeout() {
-            MiniAgentConfig config = MiniAgentConfig.builder()
+            AgentLoop.Config config = AgentLoop.Config.builder()
                     .commandTimeout(Duration.ofMinutes(2))
                     .build();
             assertThat(config.commandTimeout()).isEqualTo(Duration.ofMinutes(2));
@@ -104,7 +104,7 @@ class MiniAgentConfigTest {
         @DisplayName("should set working directory")
         void shouldSetWorkingDirectory() {
             Path customDir = Path.of("/tmp");
-            MiniAgentConfig config = MiniAgentConfig.builder()
+            AgentLoop.Config config = AgentLoop.Config.builder()
                     .workingDirectory(customDir)
                     .build();
             assertThat(config.workingDirectory()).isEqualTo(customDir);
@@ -113,7 +113,7 @@ class MiniAgentConfigTest {
         @Test
         @DisplayName("should set custom system prompt")
         void shouldSetSystemPrompt() {
-            MiniAgentConfig config = MiniAgentConfig.builder()
+            AgentLoop.Config config = AgentLoop.Config.builder()
                     .systemPrompt("Custom system prompt")
                     .build();
             assertThat(config.systemPrompt()).isEqualTo("Custom system prompt");
@@ -127,7 +127,7 @@ class MiniAgentConfigTest {
         @Test
         @DisplayName("should reject zero max turns")
         void shouldRejectZeroMaxTurns() {
-            assertThatThrownBy(() -> MiniAgentConfig.builder().maxTurns(0).build())
+            assertThatThrownBy(() -> AgentLoop.Config.builder().maxTurns(0).build())
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("maxTurns");
         }
@@ -135,7 +135,7 @@ class MiniAgentConfigTest {
         @Test
         @DisplayName("should reject negative max turns")
         void shouldRejectNegativeMaxTurns() {
-            assertThatThrownBy(() -> MiniAgentConfig.builder().maxTurns(-1).build())
+            assertThatThrownBy(() -> AgentLoop.Config.builder().maxTurns(-1).build())
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("maxTurns");
         }
@@ -143,7 +143,7 @@ class MiniAgentConfigTest {
         @Test
         @DisplayName("should reject zero cost limit")
         void shouldRejectZeroCostLimit() {
-            assertThatThrownBy(() -> MiniAgentConfig.builder().costLimit(0).build())
+            assertThatThrownBy(() -> AgentLoop.Config.builder().costLimit(0).build())
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("costLimit");
         }
@@ -151,7 +151,7 @@ class MiniAgentConfigTest {
         @Test
         @DisplayName("should reject negative cost limit")
         void shouldRejectNegativeCostLimit() {
-            assertThatThrownBy(() -> MiniAgentConfig.builder().costLimit(-1.0).build())
+            assertThatThrownBy(() -> AgentLoop.Config.builder().costLimit(-1.0).build())
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("costLimit");
         }
@@ -159,7 +159,7 @@ class MiniAgentConfigTest {
         @Test
         @DisplayName("should reject null command timeout")
         void shouldRejectNullTimeout() {
-            assertThatThrownBy(() -> MiniAgentConfig.builder().commandTimeout(null).build())
+            assertThatThrownBy(() -> AgentLoop.Config.builder().commandTimeout(null).build())
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("commandTimeout");
         }
@@ -167,7 +167,7 @@ class MiniAgentConfigTest {
         @Test
         @DisplayName("should reject zero command timeout")
         void shouldRejectZeroTimeout() {
-            assertThatThrownBy(() -> MiniAgentConfig.builder().commandTimeout(Duration.ZERO).build())
+            assertThatThrownBy(() -> AgentLoop.Config.builder().commandTimeout(Duration.ZERO).build())
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("commandTimeout");
         }
@@ -180,14 +180,14 @@ class MiniAgentConfigTest {
         @Test
         @DisplayName("should create copy with same values")
         void shouldCreateCopyWithSameValues() {
-            MiniAgentConfig original = MiniAgentConfig.builder()
+            AgentLoop.Config original = AgentLoop.Config.builder()
                     .maxTurns(10)
                     .costLimit(2.5)
                     .commandTimeout(Duration.ofSeconds(60))
                     .workingDirectory(Path.of("/tmp"))
                     .build();
 
-            MiniAgentConfig copy = original.toBuilder().build();
+            AgentLoop.Config copy = original.toBuilder().build();
 
             assertThat(copy).isEqualTo(original);
         }
@@ -195,11 +195,11 @@ class MiniAgentConfigTest {
         @Test
         @DisplayName("should allow modifying copy")
         void shouldAllowModifyingCopy() {
-            MiniAgentConfig original = MiniAgentConfig.builder()
+            AgentLoop.Config original = AgentLoop.Config.builder()
                     .maxTurns(10)
                     .build();
 
-            MiniAgentConfig modified = original.toBuilder()
+            AgentLoop.Config modified = original.toBuilder()
                     .maxTurns(20)
                     .build();
 
@@ -215,11 +215,11 @@ class MiniAgentConfigTest {
         @Test
         @DisplayName("should apply customizer function")
         void shouldApplyCustomizer() {
-            MiniAgentConfig original = MiniAgentConfig.builder()
+            AgentLoop.Config original = AgentLoop.Config.builder()
                     .maxTurns(10)
                     .build();
 
-            MiniAgentConfig modified = original.apply(b -> b.maxTurns(30));
+            AgentLoop.Config modified = original.apply(b -> b.maxTurns(30));
 
             assertThat(modified.maxTurns()).isEqualTo(30);
             assertThat(original.maxTurns()).isEqualTo(10); // Original unchanged

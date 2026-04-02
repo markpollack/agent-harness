@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.github.markpollack.workflow.agents.mini;
+package io.github.markpollack.workflow.agents;
 
 import io.micrometer.observation.ObservationRegistry;
 import io.github.markpollack.workflow.callback.AgentCallback;
@@ -45,16 +45,19 @@ import org.springframework.ai.support.ToolCallbacks;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.model.tool.DefaultToolCallingManager;
 
+import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 
 /**
- * MiniAgent - A minimal SWE agent leveraging Spring AI's built-in agent loop.
+ * AgentLoop - A ready-to-use SWE agent leveraging Spring AI's built-in agent loop.
  * <p>
- * Spring AI's ChatClient + ToolCallAdvisor handles the entire tool execution loop.
- * This agent adds: tools, observability wiring, session memory, and a simple API.
+ * Spring AI's ChatClient + {@link AgentLoopAdvisor} handles the entire tool execution loop.
+ * This class adds: tools, observability wiring, session memory, and a simple API.
  * <p>
  * Features:
  * <ul>
@@ -63,13 +66,13 @@ import java.util.Map;
  *   <li><strong>Callbacks</strong>: AgentCallback for TUI integration</li>
  * </ul>
  *
- * @see MiniAgentConfig for configuration options
+ * @see Config for configuration options
  */
-public class MiniAgent {
+public class AgentLoop {
 
-    private static final Logger log = LoggerFactory.getLogger(MiniAgent.class);
+    private static final Logger log = LoggerFactory.getLogger(AgentLoop.class);
 
-    private final MiniAgentConfig config;
+    private final Config config;
     private final ChatClient chatClient;
     private final List<ToolCallback> tools;
     private final ToolCallObservationHandler observationHandler;
@@ -78,7 +81,7 @@ public class MiniAgent {
     private final boolean interactive;
     private final String conversationId;
 
-    private MiniAgent(Builder builder) {
+    private AgentLoop(Builder builder) {
         this.config = builder.config;
         this.sessionMemory = builder.sessionMemory;
         this.interactive = builder.interactive;
@@ -160,7 +163,7 @@ public class MiniAgent {
         var chatClientBuilder = ChatClient.builder(builder.model)
                 .defaultAdvisors(toolCallAdvisor)
                 .defaultToolCallbacks(tools.toArray(new ToolCallback[0]))
-                .defaultToolContext(Map.of("agentId", "mini-agent"));
+                .defaultToolContext(Map.of("agentId", "agent-loop"));
 
         if (sessionMemory != null) {
             var memoryAdvisor = MessageChatMemoryAdvisor.builder(sessionMemory)
@@ -178,10 +181,10 @@ public class MiniAgent {
      * If session memory is configured, the conversation history is preserved
      * across multiple run() calls.
      */
-    public MiniAgentResult run(String task) {
-        log.info("MiniAgent starting: {}", truncate(task, 80));
+    public Result run(String task) {
+        log.info("AgentLoop starting: {}", truncate(task, 80));
         countingListener.reset();
-        observationHandler.setContext("mini-agent", 1);
+        observationHandler.setContext("agent-loop", 1);
 
         try {
             // Include working directory in system prompt so LLM uses correct paths
@@ -197,13 +200,13 @@ public class MiniAgent {
             long tokens = extractTokens(response);
             String output = extractText(response);
             int toolCalls = countingListener.getToolCallCount();
-            log.info("MiniAgent completed: {} tokens, {} tool calls", tokens, toolCalls);
+            log.info("AgentLoop completed: {} tokens, {} tool calls", tokens, toolCalls);
 
-            return new MiniAgentResult("COMPLETED", output, 1, toolCalls, tokens, tokens * 0.000006);
+            return new Result("COMPLETED", output, 1, toolCalls, tokens, tokens * 0.000006);
 
         } catch (AgentLoopTerminatedException e) {
             var state = e.getState();
-            log.warn("MiniAgent terminated: {} at turn {}", e.getReason(), state != null ? state.currentTurn() : 0);
+            log.warn("AgentLoop terminated: {} at turn {}", e.getReason(), state != null ? state.currentTurn() : 0);
             int toolCalls = countingListener.getToolCallCount();
             String status = switch (e.getReason()) {
                 case MAX_TURNS_REACHED -> "TURN_LIMIT_REACHED";
@@ -213,7 +216,7 @@ public class MiniAgent {
                 case EXTERNAL_SIGNAL -> "ABORTED";
                 default -> "TERMINATED";
             };
-            return new MiniAgentResult(status, e.getPartialOutput(),
+            return new Result(status, e.getPartialOutput(),
                     state != null ? state.currentTurn() : 0, toolCalls,
                     state != null ? state.totalTokensUsed() : 0,
                     state != null ? state.estimatedCost() : 0.0);
@@ -232,9 +235,9 @@ public class MiniAgent {
      * @param callback Callback for events (must be same as builder callback)
      * @return Agent result
      */
-    public MiniAgentResult chat(String message, AgentCallback callback) {
+    public Result chat(String message, AgentCallback callback) {
         // Note: onThinking is called by CallbackLoopListener.onTurnStarted()
-        MiniAgentResult result = run(message);
+        Result result = run(message);
         if (callback != null) {
             callback.onComplete();
         }
@@ -282,20 +285,20 @@ public class MiniAgent {
     // --- Static factory methods for backwards compatibility ---
 
     /**
-     * Create a MiniAgent with default configuration.
+     * Create an AgentLoop with default configuration.
      * @deprecated Use {@link #builder()} instead
      */
     @Deprecated
-    public MiniAgent(MiniAgentConfig config, ChatModel model) {
+    public AgentLoop(Config config, ChatModel model) {
         this(builder().config(config).model(model));
     }
 
     /**
-     * Create a MiniAgent with a custom tool listener.
+     * Create an AgentLoop with a custom tool listener.
      * @deprecated Use {@link #builder()} instead
      */
     @Deprecated
-    public MiniAgent(MiniAgentConfig config, ChatModel model, ToolCallListener listener) {
+    public AgentLoop(Config config, ChatModel model, ToolCallListener listener) {
         this(builder().config(config).model(model).toolCallListener(listener));
     }
 
@@ -306,7 +309,7 @@ public class MiniAgent {
     }
 
     public static final class Builder {
-        private MiniAgentConfig config;
+        private Config config;
         private ChatModel model;
         private ChatMemory sessionMemory;
         private boolean interactive = false;
@@ -319,7 +322,7 @@ public class MiniAgent {
         /**
          * Set the agent configuration (required).
          */
-        public Builder config(MiniAgentConfig config) {
+        public Builder config(Config config) {
             this.config = config;
             return this;
         }
@@ -390,7 +393,7 @@ public class MiniAgent {
             return this;
         }
 
-        public MiniAgent build() {
+        public AgentLoop build() {
             if (config == null) {
                 throw new IllegalStateException("config is required");
             }
@@ -400,7 +403,7 @@ public class MiniAgent {
             if (interactive && agentCallback == null) {
                 log.warn("Interactive mode enabled but no agentCallback provided - questions will not be handled");
             }
-            return new MiniAgent(this);
+            return new AgentLoop(this);
         }
     }
 
@@ -441,7 +444,7 @@ public class MiniAgent {
     }
 
     /**
-     * Result of a MiniAgent execution.
+     * Result of an AgentLoop execution.
      *
      * @param status Status of the execution (COMPLETED, TURN_LIMIT_REACHED, FAILED)
      * @param output The agent's final output (may be partial if turn limit reached)
@@ -450,7 +453,7 @@ public class MiniAgent {
      * @param totalTokens Total tokens used
      * @param estimatedCost Estimated cost in dollars
      */
-    public record MiniAgentResult(
+    public record Result(
             String status,
             String output,
             int turnsCompleted,
@@ -461,6 +464,178 @@ public class MiniAgent {
         public boolean isSuccess() { return "COMPLETED".equals(status); }
         public boolean isFailure() { return "FAILED".equals(status); }
         public boolean isTurnLimitReached() { return "TURN_LIMIT_REACHED".equals(status); }
+    }
+
+    /**
+     * Configuration for AgentLoop.
+     * <p>
+     * Provides sensible defaults for system prompt, turn limits, cost limits,
+     * command timeout, and working directory.
+     */
+    public record Config(
+            String systemPrompt,
+            int maxTurns,
+            double costLimit,
+            Duration commandTimeout,
+            Path workingDirectory
+    ) {
+        private static final String DEFAULT_SYSTEM_PROMPT = """
+                You are an autonomous AI assistant that solves software engineering tasks.
+
+                You have access to the following tools:
+                - Read: Read file contents (use absolute paths)
+                - Write: Create or overwrite files (use absolute paths)
+                - Edit: Make targeted edits to existing files
+                - LS: List directory contents
+                - Bash: Execute shell commands
+                - Glob: Find files by pattern
+                - Grep: Search file contents
+                - TodoWrite: Track progress on multi-step tasks
+                - Task: Delegate to specialized sub-agents for complex exploration
+                - Submit: Submit your final answer when the task is complete
+
+                When you have completed the task, use the Submit tool to provide your final answer.
+
+                ## Task Planning and Tracking (REQUIRED)
+
+                REQUIRED: Use TodoWrite to organize and track your work throughout the session.
+
+                When to use TodoWrite:
+                - Before starting any task that involves multiple steps or files
+                - When the user provides a list of things to do
+                - When you need to explore, read, modify, and verify code
+                - Whenever you are uncertain about the scope of work
+
+                How to use TodoWrite:
+                - Create your task list BEFORE you begin working
+                - Mark each task as in_progress when you start it (only one at a time)
+                - Mark tasks as completed immediately after finishing
+                - Add new tasks if you discover additional work needed
+
+                When in doubt, create a todo list. Being organized ensures thoroughness.
+
+                ## Codebase Exploration (REQUIRED)
+
+                REQUIRED: For exploring or investigating a codebase, use Task with subagent_type=Explore.
+
+                Use Task/Explore when:
+                - Searching for where something is implemented
+                - Understanding how code is structured
+                - Finding files related to a feature or component
+                - Investigating unfamiliar parts of the codebase
+
+                Do NOT use bash find/grep for exploration - use Task with subagent_type=Explore instead.
+
+                ## Tool Selection Rules
+
+                IMPORTANT: Bash is for terminal operations like git, npm, docker, javac, java.
+                DO NOT use bash for file operations - use the specialized tools instead.
+
+                Avoid using Bash with `find`, `grep`, `cat`, `head`, `tail`, `sed`, `awk`, or `echo` commands.
+                Always prefer dedicated tools:
+                - File search: use Glob (NOT find or ls)
+                - Content search: use Grep (NOT grep or rg)
+                - Read files: use Read (NOT cat/head/tail)
+                - Edit files: use Edit (NOT sed/awk)
+                - Write files: use Write (NOT echo >/cat <<EOF)
+
+                ## Verification
+
+                - When creating complete Java classes, verify they compile with javac
+                - After fixing bugs, run the code or tests to confirm the fix works
+                - Use judgment: skip verification for fragments or partial code
+
+                ## Other Guidelines
+
+                - All file paths must be absolute paths
+                - Execute one operation at a time
+                - Check output before proceeding
+                - If an operation fails, analyze the error and try a different approach
+                """;
+
+        private static final int DEFAULT_MAX_TURNS = 20;
+        private static final double DEFAULT_COST_LIMIT = 1.0;
+        private static final Duration DEFAULT_COMMAND_TIMEOUT = Duration.ofSeconds(30);
+
+        public Config {
+            if (maxTurns <= 0) {
+                throw new IllegalArgumentException("maxTurns must be positive");
+            }
+            if (costLimit <= 0) {
+                throw new IllegalArgumentException("costLimit must be positive");
+            }
+            if (commandTimeout == null || commandTimeout.isNegative() || commandTimeout.isZero()) {
+                throw new IllegalArgumentException("commandTimeout must be positive");
+            }
+            if (workingDirectory == null) {
+                throw new IllegalArgumentException("workingDirectory cannot be null");
+            }
+        }
+
+        public static ConfigBuilder builder() {
+            return new ConfigBuilder();
+        }
+
+        public ConfigBuilder toBuilder() {
+            return new ConfigBuilder()
+                    .systemPrompt(this.systemPrompt)
+                    .maxTurns(this.maxTurns)
+                    .costLimit(this.costLimit)
+                    .commandTimeout(this.commandTimeout)
+                    .workingDirectory(this.workingDirectory);
+        }
+
+        public Config apply(Consumer<ConfigBuilder> customizer) {
+            ConfigBuilder builder = toBuilder();
+            customizer.accept(builder);
+            return builder.build();
+        }
+
+        public static final class ConfigBuilder {
+            private String systemPrompt = DEFAULT_SYSTEM_PROMPT;
+            private int maxTurns = DEFAULT_MAX_TURNS;
+            private double costLimit = DEFAULT_COST_LIMIT;
+            private Duration commandTimeout = DEFAULT_COMMAND_TIMEOUT;
+            private Path workingDirectory;
+
+            public ConfigBuilder systemPrompt(String systemPrompt) {
+                this.systemPrompt = systemPrompt;
+                return this;
+            }
+
+            public ConfigBuilder maxTurns(int maxTurns) {
+                this.maxTurns = maxTurns;
+                return this;
+            }
+
+            public ConfigBuilder costLimit(double costLimit) {
+                this.costLimit = costLimit;
+                return this;
+            }
+
+            public ConfigBuilder commandTimeout(Duration commandTimeout) {
+                this.commandTimeout = commandTimeout;
+                return this;
+            }
+
+            public ConfigBuilder workingDirectory(Path workingDirectory) {
+                this.workingDirectory = workingDirectory;
+                return this;
+            }
+
+            public Config build() {
+                if (workingDirectory == null) {
+                    workingDirectory = Path.of(System.getProperty("user.dir"));
+                }
+                return new Config(
+                        systemPrompt,
+                        maxTurns,
+                        costLimit,
+                        commandTimeout,
+                        workingDirectory
+                );
+            }
+        }
     }
 
     /**

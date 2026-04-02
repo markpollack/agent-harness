@@ -28,7 +28,7 @@ import java.util.Objects;
  * <p>
  * Design rationale:
  * <ul>
- *   <li>GraphCompositionStrategy is not an AgentLoop, so it doesn't return LoopResult</li>
+ *   <li>GraphCompositionStrategy is not a LoopPattern, so it doesn't return LoopResult</li>
  *   <li>Graph failures (stuck in node) are distinct from loop failures</li>
  *   <li>Path tracking enables debugging and observability</li>
  * </ul>

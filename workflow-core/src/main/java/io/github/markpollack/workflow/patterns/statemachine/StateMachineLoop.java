@@ -15,7 +15,7 @@
  */
 package io.github.markpollack.workflow.patterns.statemachine;
 
-import io.github.markpollack.workflow.core.AgentLoop;
+import io.github.markpollack.workflow.core.LoopPattern;
 import io.github.markpollack.workflow.core.LoopState;
 import io.github.markpollack.workflow.core.LoopStatus;
 import io.github.markpollack.workflow.core.TerminationReason;
@@ -67,7 +67,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *
  * <p>Uses Spring AI ChatClient directly - synchronous API, no Reactor.
  */
-public class StateMachineLoop implements AgentLoop<StateMachineResult> {
+public class StateMachineLoop implements LoopPattern<StateMachineResult> {
 
     private static final Logger log = LoggerFactory.getLogger(StateMachineLoop.class);
 

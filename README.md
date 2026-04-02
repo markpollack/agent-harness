@@ -26,7 +26,7 @@ The workflow compiles to a **graph intermediate representation** that separates 
 | `workflow-core` | Workflow DSL, graph IR, executor, edge conditions |
 | `workflow-tools` | Agent tools (Bash, Read, Write, Edit, Glob, Grep) |
 | `workflow-flows` | Built-in flow patterns (sequential, parallel, loop) |
-| `workflow-agents` | Ready-to-use agents (MiniAgent, ClaudeStep) |
+| `workflow-agents` | Ready-to-use agents (AgentLoop, ClaudeStep) |
 | `workflow-examples` | Example workflows and usage patterns |
 
 ## Quick Example

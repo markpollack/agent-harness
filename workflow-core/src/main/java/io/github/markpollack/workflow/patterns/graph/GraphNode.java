@@ -15,7 +15,7 @@
  */
 package io.github.markpollack.workflow.patterns.graph;
 
-import io.github.markpollack.workflow.core.AgentLoop;
+import io.github.markpollack.workflow.core.LoopPattern;
 import io.github.markpollack.workflow.core.LoopResult;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.tool.ToolCallback;
@@ -26,8 +26,8 @@ import java.util.function.BiFunction;
 /**
  * A node in a graph strategy representing a unit of work.
  * <p>
- * GraphNode is part of the composition layer and does NOT implement AgentLoop.
- * It can wrap either a simple function or an existing AgentLoop implementation.
+ * GraphNode is part of the composition layer and does NOT implement LoopPattern.
+ * It can wrap either a simple function or an existing LoopPattern implementation.
  * <p>
  * Design:
  * <ul>
@@ -90,13 +90,13 @@ public interface GraphNode<I, O> {
     }
 
     /**
-     * Creates a node that wraps an existing AgentLoop.
+     * Creates a node that wraps an existing LoopPattern.
      * <p>
      * The loop executes inside this node, allowing composition of loop patterns
      * within a graph structure. The input is used as the user message for the loop.
      *
      * @param name the node name
-     * @param loop the AgentLoop to wrap
+     * @param loop the LoopPattern to wrap
      * @param chatClient the ChatClient for the loop
      * @param tools the tools available to the loop
      * @param <R> the loop result type
@@ -104,7 +104,7 @@ public interface GraphNode<I, O> {
      */
     static <R extends LoopResult> GraphNode<String, R> fromLoop(
             String name,
-            AgentLoop<R> loop,
+            LoopPattern<R> loop,
             ChatClient chatClient,
             List<ToolCallback> tools) {
         return new LoopGraphNode<>(name, loop, chatClient, tools);

@@ -15,7 +15,7 @@
  */
 package io.github.markpollack.workflow.patterns.evaluator;
 
-import io.github.markpollack.workflow.core.AgentLoop;
+import io.github.markpollack.workflow.core.LoopPattern;
 import io.github.markpollack.workflow.core.LoopState;
 import io.github.markpollack.workflow.core.TerminationReason;
 import io.github.markpollack.workflow.patterns.judge.SpringAiJuryAdapter;
@@ -60,7 +60,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * <p>
  * Configuration is provided at construction time via the builder pattern.
  */
-public class EvaluatorOptimizerLoop implements AgentLoop<EvaluatorOptimizerResult> {
+public class EvaluatorOptimizerLoop implements LoopPattern<EvaluatorOptimizerResult> {
 
     private static final Logger log = LoggerFactory.getLogger(EvaluatorOptimizerLoop.class);
 
