@@ -14,7 +14,7 @@ The workflow compiles to a **graph intermediate representation** that separates 
 <dependency>
     <groupId>io.github.markpollack</groupId>
     <artifactId>workflow-core</artifactId>
-    <version>0.1.0</version>
+    <version>0.2.0</version>
 </dependency>
 ```
 
