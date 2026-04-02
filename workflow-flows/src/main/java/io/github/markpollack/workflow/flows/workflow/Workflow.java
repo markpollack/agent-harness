@@ -84,6 +84,8 @@ public final class Workflow<I, O> implements Step<I, O> {
         private final AtomicInteger nodeCounter = new AtomicInteger(0);
         // Recovery nodes from onError() that need wiring to the next step
         private final List<String> pendingConvergence = new ArrayList<>();
+        // Maps step name → generated node name for backTo() target resolution
+        private final Map<String, String> stepNameToNodeName = new LinkedHashMap<>();
 
         private WorkflowBuilder(String name) {
             this.name = Objects.requireNonNull(name, "name must not be null");
@@ -103,6 +105,7 @@ public final class Workflow<I, O> implements Step<I, O> {
             pendingConvergence.clear();
 
             lastNodeName = nodeName;
+            stepNameToNodeName.put(step.name(), nodeName);
             return this;
         }
 
@@ -222,6 +225,39 @@ public final class Workflow<I, O> implements Step<I, O> {
                     new EdgeCondition.ErrorMatch(exceptionType),
                     "error:" + exceptionType.getName()));
             pendingConvergence.add(recoveryName);
+            return this;
+        }
+
+        // -- BackTo (cyclic back-edge to an earlier step) --
+
+        /**
+         * Adds a conditional back-edge from the current node to a previously declared step.
+         * When the condition evaluates to {@code true} on the current output, execution
+         * jumps back to the target step. When {@code false}, execution continues forward
+         * to the next step in the chain.
+         * <p>
+         * Use for retry patterns: {@code step(rebase).step(runTests).backTo("rebase", testsFailed).step(merge)}.
+         * <p>
+         * {@link RunOptions#maxIterations()} acts as a circuit breaker for cycles.
+         *
+         * @param stepName  the {@link Step#name()} of a previously added step
+         * @param condition evaluated on current output; {@code true} = take the back-edge
+         * @return this builder (lastNodeName unchanged — next step chains from the same node)
+         * @throws IllegalStateException    if no preceding step exists
+         * @throws IllegalArgumentException if stepName was not previously declared
+         */
+        public WorkflowBuilder<I, O> backTo(String stepName, Predicate<Object> condition) {
+            if (lastNodeName == null) {
+                throw new IllegalStateException("backTo requires a preceding step");
+            }
+            String targetNodeName = stepNameToNodeName.get(stepName);
+            if (targetNodeName == null) {
+                throw new IllegalArgumentException("Unknown step name for backTo: '" + stepName
+                        + "'. Declared steps: " + stepNameToNodeName.keySet());
+            }
+            edges.add(WorkflowEdge.conditional(lastNodeName, targetNodeName,
+                    new EdgeCondition.BackEdge(condition), "backTo:" + stepName));
+            // Do NOT advance lastNodeName — next step() chains from the same node
             return this;
         }
 

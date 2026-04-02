@@ -127,12 +127,28 @@ public class WorkflowExecutor {
 
                     // Advance to next node
                     previousNodeName = currentNodeName;
-                    String next = findNonErrorSuccessor(graph, currentNodeName);
-                    if (next == null) {
-                        // Terminal node (finish or only-error-edges)
-                        return (O) currentValue;
+
+                    // Check for back-edges (cyclic paths) before normal forward progression
+                    WorkflowEdge backEdge = findBackEdge(graph, currentNodeName, currentValue);
+                    if (backEdge != null) {
+                        String counterKey = "backTo." + currentNodeName;
+                        int count = loopCounters.getOrDefault(counterKey, 0) + 1;
+                        loopCounters.put(counterKey, count);
+                        if (count >= maxIterations) {
+                            throw new IllegalStateException("Back-edge from '" + currentNodeName
+                                    + "' exceeded max iterations: " + maxIterations);
+                        }
+                        logger.debug("Taking back-edge from '{}' to '{}' (cycle {})",
+                                currentNodeName, backEdge.to(), count);
+                        currentNodeName = backEdge.to();
+                    } else {
+                        String next = findNonErrorSuccessor(graph, currentNodeName);
+                        if (next == null) {
+                            // Terminal node (finish or only-error-edges)
+                            return (O) currentValue;
+                        }
+                        currentNodeName = next;
                     }
-                    currentNodeName = next;
                 }
 
                 case WorkflowNode.GatewayNode gn -> {
@@ -340,11 +356,21 @@ public class WorkflowExecutor {
     private String findNonErrorSuccessor(WorkflowGraph<?, ?> graph, String nodeName) {
         List<WorkflowEdge> edges = graph.edgesFrom(nodeName);
         for (WorkflowEdge edge : edges) {
-            if (!(edge.condition() instanceof EdgeCondition.ErrorMatch)) {
+            if (!(edge.condition() instanceof EdgeCondition.ErrorMatch)
+                    && !(edge.condition() instanceof EdgeCondition.BackEdge)) {
                 return edge.to();
             }
         }
-        // All edges are error edges or no edges — terminal
+        // All edges are error/back edges or no edges — terminal
+        return null;
+    }
+
+    private WorkflowEdge findBackEdge(WorkflowGraph<?, ?> graph, String nodeName, Object currentValue) {
+        for (WorkflowEdge edge : graph.edgesFrom(nodeName)) {
+            if (edge.condition() instanceof EdgeCondition.BackEdge be && be.condition().test(currentValue)) {
+                return edge;
+            }
+        }
         return null;
     }
 

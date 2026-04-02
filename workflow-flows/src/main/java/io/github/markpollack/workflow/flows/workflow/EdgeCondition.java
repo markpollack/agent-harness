@@ -1,5 +1,7 @@
 package io.github.markpollack.workflow.flows.workflow;
 
+import java.util.function.Predicate;
+
 /**
  * Typed condition on a {@link WorkflowEdge} — replaces the nullable {@code Predicate + Function + label}
  * design. Each variant carries only the data it needs; the executor matches on variants, not on nullability.
@@ -15,7 +17,8 @@ public sealed interface EdgeCondition permits
         EdgeCondition.BranchIndex,
         EdgeCondition.ErrorMatch,
         EdgeCondition.LoopContinue,
-        EdgeCondition.LoopExit {
+        EdgeCondition.LoopExit,
+        EdgeCondition.BackEdge {
 
     /** Sequential flow — always taken. */
     record Unconditional() implements EdgeCondition {}
@@ -40,4 +43,13 @@ public sealed interface EdgeCondition permits
 
     /** Loop exit-edge: predicate says done. */
     record LoopExit() implements EdgeCondition {}
+
+    /**
+     * Cyclic back-edge: condition evaluated on current step output to decide
+     * whether to jump back to an earlier node.
+     * <p>
+     * Used by {@code WorkflowBuilder.backTo(stepName, condition)} to express
+     * arbitrary cycles like retry-rebase: {@code rebase → runTests → backTo(rebase) if tests fail}.
+     */
+    record BackEdge(Predicate<Object> condition) implements EdgeCondition {}
 }

@@ -783,6 +783,74 @@ class WorkflowTest {
     }
 
     // -------------------------------------------------------------------------
+    // BackTo (cyclic back-edges)
+    // -------------------------------------------------------------------------
+
+    @Nested
+    class BackTo {
+
+        @Test
+        void backToShouldCycleWhenConditionTrue() {
+            AtomicInteger count = new AtomicInteger(0);
+
+            Step<Integer, Integer> a = Step.named("a", (ctx, in) -> {
+                count.incrementAndGet();
+                return ((Integer) in) + 1;
+            });
+            Step<Integer, Integer> b = Step.named("b", (ctx, in) -> in);
+
+            int result = Workflow.<Integer, Integer>define("back-edge")
+                    .step(a)
+                    .step(b)
+                    .backTo("a", output -> ((Integer) output) < 3)
+                    .step(Step.named("c", (ctx, in) -> in))
+                    .run(0, RunOptions.unlimited().withMaxIterations(100));
+
+            assertThat(result).isEqualTo(3);
+            assertThat(count.get()).isEqualTo(3); // a runs 3 times: 0→1, 1→2, 2→3
+        }
+
+        @Test
+        void backToShouldEnforceMaxIterations() {
+            Step<Integer, Integer> a = Step.named("a", (ctx, in) -> ((Integer) in) + 1);
+            Step<Integer, Integer> b = Step.named("b", (ctx, in) -> in);
+
+            assertThatThrownBy(() -> Workflow.<Integer, Integer>define("infinite")
+                    .step(a)
+                    .step(b)
+                    .backTo("a", output -> true) // always cycle
+                    .step(Step.named("c", (ctx, in) -> in))
+                    .run(0, RunOptions.unlimited().withMaxIterations(5)))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("max iterations");
+        }
+
+        @Test
+        void backToShouldBeVisibleInCompiledGraph() {
+            WorkflowGraph<Integer, Integer> graph = Workflow.<Integer, Integer>define("visible")
+                    .step(Step.named("a", (ctx, in) -> in))
+                    .step(Step.named("b", (ctx, in) -> in))
+                    .backTo("a", output -> false)
+                    .step(Step.named("c", (ctx, in) -> in))
+                    .compile();
+
+            assertThat(graph.edges().stream()
+                    .anyMatch(e -> e.condition() instanceof EdgeCondition.BackEdge
+                            && e.label() != null && e.label().equals("backTo:a")))
+                    .isTrue();
+        }
+
+        @Test
+        void backToShouldRejectInvalidTargetName() {
+            assertThatThrownBy(() -> Workflow.<String, String>define("invalid")
+                    .step(Step.named("a", (ctx, in) -> in))
+                    .backTo("nonexistent", output -> true))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("nonexistent");
+        }
+    }
+
+    // -------------------------------------------------------------------------
     // Edge cases
     // -------------------------------------------------------------------------
 
