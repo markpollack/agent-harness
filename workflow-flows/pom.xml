@@ -33,6 +33,14 @@
             <artifactId>jackson-databind</artifactId>
         </dependency>
 
+        <!-- A2A Protocol SDK (optional — A2AStep remote agent invocation) -->
+        <dependency>
+            <groupId>io.github.a2asdk</groupId>
+            <artifactId>a2a-java-sdk-client</artifactId>
+            <version>0.3.3.Final</version>
+            <optional>true</optional>
+        </dependency>
+
         <!-- Agent Judge (optional — JudgeGate, TieredGate) -->
         <dependency>
             <groupId>org.springaicommunity</groupId>
