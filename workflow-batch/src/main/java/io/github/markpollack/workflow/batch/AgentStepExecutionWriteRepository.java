@@ -34,6 +34,12 @@ public interface AgentStepExecutionWriteRepository extends Repository<AgentStepE
 	AgentStepExecution save(AgentStepExecution entity);
 
 	/**
+	 * Delete a step execution by ID. Used to clean up FAILED records before retrying
+	 * a step with the same runId.
+	 */
+	void deleteById(UUID id);
+
+	/**
 	 * Mark a step as completed with its output and metrics.
 	 */
 	@Modifying(clearAutomatically = true, flushAutomatically = true)
