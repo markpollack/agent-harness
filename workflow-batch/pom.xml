@@ -45,6 +45,14 @@
             <optional>true</optional>
         </dependency>
 
+        <!-- Spring JDBC for JdbcTraceRecorder -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-jdbc</artifactId>
+            <version>6.2.5</version>
+            <optional>true</optional>
+        </dependency>
+
         <!-- Jackson for output serialization -->
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
