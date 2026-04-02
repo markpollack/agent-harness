@@ -21,11 +21,12 @@
             <artifactId>workflow-flows</artifactId>
         </dependency>
 
-        <!-- JPA for entity persistence (optional — only needed at runtime if using CheckpointingStepRunner) -->
+        <!-- Hibernate ORM for JPA entities (@Entity, @UuidGenerator, @UpdateTimestamp) -->
         <dependency>
-            <groupId>jakarta.persistence</groupId>
-            <artifactId>jakarta.persistence-api</artifactId>
-            <version>3.1.0</version>
+            <groupId>org.hibernate.orm</groupId>
+            <artifactId>hibernate-core</artifactId>
+            <version>6.6.41.Final</version>
+            <optional>true</optional>
         </dependency>
 
         <!-- Jackson for output serialization -->
