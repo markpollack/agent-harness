@@ -1,6 +1,6 @@
 package io.github.markpollack.workflow.temporal;
 
-import io.github.markpollack.workflow.flows.AgentContext;
+import io.github.markpollack.workflow.core.AgentContext;
 import io.github.markpollack.workflow.flows.Step;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

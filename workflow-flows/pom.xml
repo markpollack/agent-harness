@@ -15,6 +15,12 @@
     <description>Composable step-based flow combinators for agent workflows (sequential, parallel, loop)</description>
 
     <dependencies>
+        <!-- workflow-api provides AgentContext, ContextKey, AgentHandler -->
+        <dependency>
+            <groupId>io.github.markpollack</groupId>
+            <artifactId>workflow-api</artifactId>
+        </dependency>
+
         <!-- workflow-core provides GraphCompositionStrategy for GraphStep -->
         <dependency>
             <groupId>io.github.markpollack</groupId>

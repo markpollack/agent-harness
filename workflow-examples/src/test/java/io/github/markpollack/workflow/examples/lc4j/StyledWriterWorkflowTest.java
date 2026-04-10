@@ -15,7 +15,7 @@
  */
 package io.github.markpollack.workflow.examples.lc4j;
 
-import io.github.markpollack.workflow.flows.AgentContext;
+import io.github.markpollack.workflow.core.AgentContext;
 import io.github.markpollack.workflow.flows.Step;
 import io.github.markpollack.workflow.flows.workflow.Workflow;
 import org.junit.jupiter.api.Test;

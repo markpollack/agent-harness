@@ -1,6 +1,6 @@
 package io.github.markpollack.workflow.flows.workflow;
 
-import io.github.markpollack.workflow.flows.AgentContext;
+import io.github.markpollack.workflow.core.AgentContext;
 import io.github.markpollack.workflow.flows.AgentStep;
 import io.github.markpollack.workflow.flows.Step;
 import io.github.markpollack.workflow.patterns.graph.NodeType;
@@ -12,6 +12,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Predicate;
 
@@ -27,8 +28,11 @@ public final class Workflow<I, O> implements Step<I, O> {
 
     private final WorkflowGraph<I, O> graph;
 
-    private Workflow(WorkflowGraph<I, O> graph) {
+    private final WorkflowExecutor executor;
+
+    private Workflow(WorkflowGraph<I, O> graph, WorkflowExecutor executor) {
         this.graph = Objects.requireNonNull(graph, "graph must not be null");
+        this.executor = executor;
     }
 
     @Override
@@ -38,7 +42,11 @@ public final class Workflow<I, O> implements Step<I, O> {
 
     @Override
     public O execute(AgentContext ctx, I input) {
-        return new WorkflowExecutor().execute(graph, ctx, input);
+        return resolveExecutor().execute(graph, ctx, input);
+    }
+
+    private WorkflowExecutor resolveExecutor() {
+        return executor != null ? executor : new WorkflowExecutor();
     }
 
     public WorkflowGraph<I, O> graph() {
@@ -87,8 +95,29 @@ public final class Workflow<I, O> implements Step<I, O> {
         // Maps step name → generated node name for backTo() target resolution
         private final Map<String, String> stepNameToNodeName = new LinkedHashMap<>();
 
+        private WorkflowExecutor executor;
+
         private WorkflowBuilder(String name) {
             this.name = Objects.requireNonNull(name, "name must not be null");
+        }
+
+        /**
+         * Sets a custom {@link WorkflowExecutor} for this workflow.
+         * <p>
+         * When set, all {@code run()} and {@code build()} methods use this executor
+         * instead of creating a default one. Use this to inject a configured
+         * {@link StepRunner} and {@link TraceRecorder}.
+         *
+         * @param executor the executor to use
+         * @return this builder
+         */
+        public WorkflowBuilder<I, O> withExecutor(WorkflowExecutor executor) {
+            this.executor = Objects.requireNonNull(executor, "executor must not be null");
+            return this;
+        }
+
+        private WorkflowExecutor resolveExecutor() {
+            return executor != null ? executor : new WorkflowExecutor();
         }
 
         public WorkflowBuilder<I, O> step(Step<?, ?> step) {
@@ -274,16 +303,50 @@ public final class Workflow<I, O> implements Step<I, O> {
 
         public O run(I input) {
             WorkflowGraph<I, O> graph = compile();
-            return new WorkflowExecutor().execute(graph, AgentContext.create(), input);
+            return resolveExecutor().execute(graph, AgentContext.create(), input);
         }
 
         public O run(I input, RunOptions options) {
             WorkflowGraph<I, O> graph = compile();
-            return new WorkflowExecutor().execute(graph, AgentContext.create(), input, options);
+            return resolveExecutor().execute(graph, AgentContext.create(), input, options);
+        }
+
+        /**
+         * Runs this workflow with a parent context, inheriting all entries but creating
+         * a fresh {@code WORKFLOW_RUN_ID} and setting {@code WORKFLOW_NAME} to this workflow's name.
+         *
+         * @param input the workflow input
+         * @param ctx   the parent context to inherit from
+         * @return the workflow output
+         */
+        public O run(I input, AgentContext ctx) {
+            WorkflowGraph<I, O> graph = compile();
+            AgentContext subCtx = ctx.mutate()
+                    .with(AgentContext.WORKFLOW_NAME, name)
+                    .with(AgentContext.WORKFLOW_RUN_ID, UUID.randomUUID().toString())
+                    .build();
+            return resolveExecutor().execute(graph, subCtx, input);
+        }
+
+        /**
+         * Runs this workflow with a parent context and run options.
+         *
+         * @param input   the workflow input
+         * @param ctx     the parent context to inherit from
+         * @param options runtime constraints (max cost, max iterations, max duration)
+         * @return the workflow output
+         */
+        public O run(I input, AgentContext ctx, RunOptions options) {
+            WorkflowGraph<I, O> graph = compile();
+            AgentContext subCtx = ctx.mutate()
+                    .with(AgentContext.WORKFLOW_NAME, name)
+                    .with(AgentContext.WORKFLOW_RUN_ID, UUID.randomUUID().toString())
+                    .build();
+            return resolveExecutor().execute(graph, subCtx, input, options);
         }
 
         public Workflow<I, O> build() {
-            return new Workflow<>(compile());
+            return new Workflow<>(compile(), executor);
         }
 
         // -- Internal helpers --
@@ -663,9 +726,26 @@ public final class Workflow<I, O> implements Step<I, O> {
         private Predicate<AgentContext> exitCondition;
         private int maxIterations = 10;
 
+        private WorkflowExecutor executor;
+
         private SupervisorBuilder(String name, ChatClient routingClient) {
             this.name = Objects.requireNonNull(name);
             this.routingClient = Objects.requireNonNull(routingClient);
+        }
+
+        /**
+         * Sets a custom {@link WorkflowExecutor} for this supervisor.
+         *
+         * @param executor the executor to use
+         * @return this builder
+         */
+        public SupervisorBuilder<I, O> withExecutor(WorkflowExecutor executor) {
+            this.executor = Objects.requireNonNull(executor, "executor must not be null");
+            return this;
+        }
+
+        private WorkflowExecutor resolveExecutor() {
+            return executor != null ? executor : new WorkflowExecutor();
         }
 
         @SafeVarargs
@@ -692,7 +772,41 @@ public final class Workflow<I, O> implements Step<I, O> {
 
         public O run(I input, RunOptions options) {
             WorkflowGraph<I, O> graph = build().graph();
-            return new WorkflowExecutor().execute(graph, AgentContext.create(), input, options);
+            return resolveExecutor().execute(graph, AgentContext.create(), input, options);
+        }
+
+        /**
+         * Runs this supervisor with a parent context, inheriting all entries but creating
+         * a fresh {@code WORKFLOW_RUN_ID} and setting {@code WORKFLOW_NAME}.
+         *
+         * @param input the input
+         * @param ctx   the parent context to inherit from
+         * @return the output
+         */
+        public O run(I input, AgentContext ctx) {
+            WorkflowGraph<I, O> graph = build().graph();
+            AgentContext subCtx = ctx.mutate()
+                    .with(AgentContext.WORKFLOW_NAME, name)
+                    .with(AgentContext.WORKFLOW_RUN_ID, UUID.randomUUID().toString())
+                    .build();
+            return resolveExecutor().execute(graph, subCtx, input);
+        }
+
+        /**
+         * Runs this supervisor with a parent context and run options.
+         *
+         * @param input   the input
+         * @param ctx     the parent context to inherit from
+         * @param options runtime constraints
+         * @return the output
+         */
+        public O run(I input, AgentContext ctx, RunOptions options) {
+            WorkflowGraph<I, O> graph = build().graph();
+            AgentContext subCtx = ctx.mutate()
+                    .with(AgentContext.WORKFLOW_NAME, name)
+                    .with(AgentContext.WORKFLOW_RUN_ID, UUID.randomUUID().toString())
+                    .build();
+            return resolveExecutor().execute(graph, subCtx, input, options);
         }
 
         public Workflow<I, O> build() {

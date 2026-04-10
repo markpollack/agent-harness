@@ -15,7 +15,7 @@
  */
 package io.github.markpollack.workflow.flows.steps;
 
-import io.github.markpollack.workflow.flows.AgentContext;
+import io.github.markpollack.workflow.core.AgentContext;
 import io.github.markpollack.workflow.flows.Step;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;

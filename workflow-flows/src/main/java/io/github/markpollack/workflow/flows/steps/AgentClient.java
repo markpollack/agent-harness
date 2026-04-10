@@ -15,7 +15,7 @@
  */
 package io.github.markpollack.workflow.flows.steps;
 
-import io.github.markpollack.workflow.flows.AgentContext;
+import io.github.markpollack.workflow.core.AgentContext;
 
 /**
  * Abstraction over any agent backend that accepts a prompt and returns text.

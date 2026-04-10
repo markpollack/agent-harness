@@ -15,6 +15,7 @@
  */
 package io.github.markpollack.workflow.flows;
 
+import io.github.markpollack.workflow.core.ContextKey;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;

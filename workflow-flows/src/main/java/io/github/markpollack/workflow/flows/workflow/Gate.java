@@ -1,6 +1,6 @@
 package io.github.markpollack.workflow.flows.workflow;
 
-import io.github.markpollack.workflow.flows.AgentContext;
+import io.github.markpollack.workflow.core.AgentContext;
 
 /**
  * An approval or quality check between workflow steps.

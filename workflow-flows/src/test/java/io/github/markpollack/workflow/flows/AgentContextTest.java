@@ -15,6 +15,8 @@
  */
 package io.github.markpollack.workflow.flows;
 
+import io.github.markpollack.workflow.core.AgentContext;
+import io.github.markpollack.workflow.core.ContextKey;
 import org.junit.jupiter.api.Test;
 
 import java.util.NoSuchElementException;

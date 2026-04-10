@@ -1,7 +1,7 @@
 package io.github.markpollack.workflow.flows.workflow;
 
-import io.github.markpollack.workflow.flows.AgentContext;
-import io.github.markpollack.workflow.flows.ContextKey;
+import io.github.markpollack.workflow.core.AgentContext;
+import io.github.markpollack.workflow.core.ContextKey;
 import io.github.markpollack.workflow.flows.Step;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -51,6 +51,7 @@ public class WorkflowExecutor {
 
     public WorkflowExecutor() {
         this(new LocalStepRunner(), TraceRecorder.noop(), null);
+        logger.warn("Using default WorkflowExecutor — StepRunner and TraceRecorder are unconfigured");
     }
 
     public StepRunner stepRunner() { return stepRunner; }

@@ -15,8 +15,8 @@
  */
 package io.github.markpollack.workflow.flows.steps;
 
-import io.github.markpollack.workflow.flows.AgentContext;
-import io.github.markpollack.workflow.flows.ContextKey;
+import io.github.markpollack.workflow.core.AgentContext;
+import io.github.markpollack.workflow.core.ContextKey;
 import io.github.markpollack.workflow.flows.Step;
 import io.github.markpollack.workflow.flows.workflow.WorkflowStatus;
 import io.github.markpollack.workflow.flows.workflow.WorkflowTerminatedException;

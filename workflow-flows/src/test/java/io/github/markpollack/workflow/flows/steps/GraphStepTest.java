@@ -15,7 +15,7 @@
  */
 package io.github.markpollack.workflow.flows.steps;
 
-import io.github.markpollack.workflow.flows.AgentContext;
+import io.github.markpollack.workflow.core.AgentContext;
 import io.github.markpollack.workflow.flows.AgentStepException;
 import io.github.markpollack.workflow.flows.Step;
 import io.github.markpollack.workflow.patterns.graph.GraphCompositionStrategy;

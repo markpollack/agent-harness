@@ -4,7 +4,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import javax.sql.DataSource;
 
-import io.github.markpollack.workflow.flows.AgentContext;
+import io.github.markpollack.workflow.core.AgentContext;
 import io.github.markpollack.workflow.flows.Step;
 import io.github.markpollack.workflow.flows.workflow.LocalStepRunner;
 import io.github.markpollack.workflow.flows.workflow.TraceRecorder;

@@ -15,6 +15,8 @@
  */
 package io.github.markpollack.workflow.flows;
 
+import io.github.markpollack.workflow.core.AgentContext;
+
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;

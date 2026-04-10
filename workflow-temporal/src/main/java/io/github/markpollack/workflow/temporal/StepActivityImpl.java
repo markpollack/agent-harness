@@ -3,7 +3,7 @@ package io.github.markpollack.workflow.temporal;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-import io.github.markpollack.workflow.flows.AgentContext;
+import io.github.markpollack.workflow.core.AgentContext;
 import io.github.markpollack.workflow.flows.Step;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

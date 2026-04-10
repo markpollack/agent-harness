@@ -1,6 +1,6 @@
 package io.github.markpollack.workflow.flows.workflow;
 
-import io.github.markpollack.workflow.flows.AgentContext;
+import io.github.markpollack.workflow.core.AgentContext;
 import org.springaicommunity.judge.context.JudgmentContext;
 import org.springaicommunity.judge.jury.Jury;
 import org.springaicommunity.judge.jury.Verdict;

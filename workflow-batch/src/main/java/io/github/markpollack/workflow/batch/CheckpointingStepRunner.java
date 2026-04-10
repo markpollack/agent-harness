@@ -4,7 +4,7 @@ import java.time.Instant;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.github.markpollack.workflow.flows.AgentContext;
+import io.github.markpollack.workflow.core.AgentContext;
 import io.github.markpollack.workflow.flows.Step;
 import io.github.markpollack.workflow.flows.workflow.StepRunner;
 import org.slf4j.Logger;
