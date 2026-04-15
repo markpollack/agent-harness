@@ -1,18 +1,18 @@
 package io.github.markpollack.workflow.flows.agent;
 
-import org.springframework.stereotype.Component;
-
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Spring stereotype for {@link io.github.markpollack.workflow.core.AgentHandler} beans.
+ * Marks a class as a named agent and associates it with
+ * {@link io.github.markpollack.workflow.core.AgentRegistry} for lookup
+ * by protocol layers (MCP, A2A, HTTP).
  * <p>
- * Marks a class as an agent and registers it in the Spring application context.
- * The {@link #value()} is the unique agent name used for lookup in
- * {@link io.github.markpollack.workflow.core.AgentRegistry}.
+ * Pure Java annotation — no framework dependency. Spring Boot
+ * auto-configuration can discover {@code @Agent}-annotated beans
+ * via component scanning, but the annotation itself is framework-agnostic.
  *
  * <pre>{@code
  * @Agent("code-review")
@@ -28,7 +28,6 @@ import java.lang.annotation.Target;
  */
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
-@Component
 public @interface Agent {
 
     /**
