@@ -92,6 +92,12 @@ public class WorkflowExecutor {
                     try {
                         Step step = sn.step();
                         output = stepRunner.execute(step, ctx, currentValue);
+                    } catch (WorkflowAbortException e) {
+                        recordTransition(runId, graph.name(), previousNodeName, sn.name(),
+                                Duration.between(stepStart, Instant.now()), 0L, 0.0, sn.type(), "abort");
+                        logger.info("Workflow '{}' aborted at '{}' with result",
+                                graph.name(), sn.name());
+                        return (O) e.getResult();
                     } catch (WorkflowTerminatedException e) {
                         recordTransition(runId, graph.name(), previousNodeName, sn.name(),
                                 Duration.between(stepStart, Instant.now()), 0L, 0.0, sn.type(), null);

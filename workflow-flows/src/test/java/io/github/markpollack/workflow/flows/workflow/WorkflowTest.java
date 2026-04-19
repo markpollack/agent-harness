@@ -310,6 +310,77 @@ class WorkflowTest {
     }
 
     // -------------------------------------------------------------------------
+    // WorkflowAbortException
+    // -------------------------------------------------------------------------
+
+    @Nested
+    class AbortWithResult {
+
+        @Test
+        void abortShouldReturnCarriedResult() {
+            Step<String, String> abortStep = Step.named("abort", (ctx, in) -> {
+                throw new WorkflowAbortException("aborted: " + in);
+            });
+
+            String result = Workflow.<String, String>define("abort-test")
+                    .step(abortStep)
+                    .run("hello");
+
+            assertThat(result).isEqualTo("aborted: hello");
+        }
+
+        @Test
+        void abortShouldReturnTypedResult() {
+            record FailureResult(String reason, int code) { }
+
+            Step<String, Object> abortStep = Step.named("abort", (ctx, in) -> {
+                throw new WorkflowAbortException(new FailureResult("bad input", 400));
+            });
+
+            Object result = Workflow.<String, Object>define("abort-typed-test")
+                    .step(abortStep)
+                    .run("test");
+
+            assertThat(result).isInstanceOf(FailureResult.class);
+            FailureResult failure = (FailureResult) result;
+            assertThat(failure.reason()).isEqualTo("bad input");
+            assertThat(failure.code()).isEqualTo(400);
+        }
+
+        @Test
+        void abortInOnErrorRecoveryShouldReturnResult() {
+            Step<String, String> risky = Step.named("risky", (ctx, in) -> {
+                throw new IllegalArgumentException("bad");
+            });
+            Step<String, String> recovery = Step.named("recovery", (ctx, in) -> {
+                throw new WorkflowAbortException("recovered-abort");
+            });
+
+            String result = Workflow.<String, String>define("abort-recovery-test")
+                    .step(risky)
+                        .onError(IllegalArgumentException.class, recovery)
+                    .run("test");
+
+            assertThat(result).isEqualTo("recovered-abort");
+        }
+
+        @Test
+        void abortAfterPriorStepShouldReturnResult() {
+            Step<String, String> first = Step.named("first", (ctx, in) -> in.toUpperCase());
+            Step<String, String> abortStep = Step.named("abort", (ctx, in) -> {
+                throw new WorkflowAbortException("done: " + in);
+            });
+
+            String result = Workflow.<String, String>define("abort-after-step")
+                    .step(first)
+                    .then(abortStep)
+                    .run("hello");
+
+            assertThat(result).isEqualTo("done: HELLO");
+        }
+    }
+
+    // -------------------------------------------------------------------------
     // Workflow implements Step
     // -------------------------------------------------------------------------
 
