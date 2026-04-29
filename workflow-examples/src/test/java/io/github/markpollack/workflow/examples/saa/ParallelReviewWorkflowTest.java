@@ -40,13 +40,14 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <h2>Our DSL equivalent</h2>
  * <pre>
  * Workflow.define("parallel-review")
- *     .parallel(reviewStep, auditStep)
+ *     .gather(reviewStep, auditStep)  // homogeneous fan-out → List&lt;Object&gt;
  *     .run(input);
  * </pre>
  *
  * SAA requires explicit START/END markers and two separate {@code addEdge} calls
- * for fan-out and join. Our {@code parallel()} expresses fan-out + AND-join in
- * a single combinator. Result is {@code List<Object>} in declaration order.
+ * for fan-out and join. Our {@code gather()} expresses homogeneous fan-out + AND-join
+ * in a single combinator. Result is {@code List<Object>} in declaration order.
+ * For heterogeneous branches writing named context keys, use {@code parallel()} instead.
  */
 class ParallelReviewWorkflowTest {
 
@@ -59,7 +60,7 @@ class ParallelReviewWorkflowTest {
         Step<String, String> auditStep  = Step.named("audit",  (ctx, in) -> "audit:"  + in);
 
         List<Object> result = (List<Object>) Workflow.<String, Object>define("parallel-review")
-                .parallel(reviewStep, auditStep)
+                .gather(reviewStep, auditStep)
                 .run("pr-123");
 
         assertThat(result).hasSize(2);
@@ -99,7 +100,7 @@ class ParallelReviewWorkflowTest {
 
         @SuppressWarnings("unchecked")
         String summary = (String) Workflow.<String, Object>define("parallel-review")
-                .parallel(reviewStep, auditStep)
+                .gather(reviewStep, auditStep)
                 .then(Step.named("summarize", (ctx, in) -> {
                     List<Object> parts = (List<Object>) in;
                     return String.join("+", parts.stream().map(Object::toString).toList());

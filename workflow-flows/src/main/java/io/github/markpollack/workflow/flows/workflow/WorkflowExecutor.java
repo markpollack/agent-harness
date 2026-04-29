@@ -38,7 +38,8 @@ public class WorkflowExecutor {
         this.stepRunner = stepRunner != null ? stepRunner : new LocalStepRunner();
         this.traceRecorder = traceRecorder != null ? traceRecorder : TraceRecorder.noop();
         this.parallelExecutor = parallelExecutor != null ? parallelExecutor :
-                Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 2);
+                Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 2,
+                        r -> { Thread t = new Thread(r); t.setDaemon(true); return t; });
     }
 
     public WorkflowExecutor(StepRunner stepRunner, TraceRecorder traceRecorder) {

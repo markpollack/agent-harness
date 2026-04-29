@@ -157,6 +157,23 @@ public final class Workflow<I, O> implements Step<I, O> {
 
         @SafeVarargs
         public final WorkflowBuilder<I, O> parallel(Step<?, ?>... steps) {
+            return parallelWithMode(WorkflowNode.JoinMode.ENRICHMENT, steps);
+        }
+
+        /**
+         * Homogeneous fan-out: all branches run concurrently and their outputs are collected
+         * into {@code List<Object>}, which becomes the input to the next step.
+         * Use when branches produce the same type and you need all results as a list.
+         * For heterogeneous branches where each result goes to a named context key, use
+         * {@link #parallel} (ENRICHMENT join).
+         */
+        @SafeVarargs
+        public final WorkflowBuilder<I, O> gather(Step<?, ?>... steps) {
+            return parallelWithMode(WorkflowNode.JoinMode.COLLECTION, steps);
+        }
+
+        @SafeVarargs
+        private WorkflowBuilder<I, O> parallelWithMode(WorkflowNode.JoinMode joinMode, Step<?, ?>... steps) {
             if (steps.length == 0) {
                 throw new IllegalArgumentException("parallel requires at least one step");
             }
@@ -179,7 +196,7 @@ public final class Workflow<I, O> implements Step<I, O> {
                 edges.add(WorkflowEdge.sequence(branchNodeName, joinName));
             }
 
-            nodes.add(new WorkflowNode.JoinNode(joinName, WorkflowNode.JoinMode.ENRICHMENT));
+            nodes.add(new WorkflowNode.JoinNode(joinName, joinMode));
             lastNodeName = joinName;
             return this;
         }
