@@ -100,45 +100,78 @@ class WorkflowTest {
     class Parallel {
 
         @Test
-        @SuppressWarnings("unchecked")
-        void parallelShouldFanOutAndCollectResults() {
+        void parallelEnrichmentJoinShouldPassInputThrough() {
+            // Enrichment join: input passes through unchanged; branches write to context
             Step<String, String> a = Step.named("a", (ctx, in) -> in + "-A");
             Step<String, String> b = Step.named("b", (ctx, in) -> in + "-B");
 
-            List<Object> result = (List<Object>) Workflow.<String, Object>define("par")
+            String result = Workflow.<String, String>define("par")
                     .parallel(a, b)
                     .run("x");
 
-            assertThat(result).containsExactlyInAnyOrder("x-A", "x-B");
+            // Input passes through — not a List
+            assertThat(result).isEqualTo("x");
         }
 
         @Test
-        @SuppressWarnings("unchecked")
-        void nestedParallelShouldCollectResultsCorrectly() {
-            // Inner parallel workflows — each returns List<Object>
-            Workflow<String, Object> innerAB = Workflow.<String, Object>define("inner-ab")
+        void parallelEnrichmentJoinShouldWriteBranchOutputsToContext() {
+            // Each branch's output is stored in context under Steps.outputOf(stepName)
+            AtomicReference<String> aOutput = new AtomicReference<>();
+            AtomicReference<String> bOutput = new AtomicReference<>();
+
+            Step<String, String> a = Step.named("enrich-a", (ctx, in) -> in + "-A");
+            Step<String, String> b = Step.named("enrich-b", (ctx, in) -> in + "-B");
+            Step<String, String> downstream = Step.named("read", (ctx, in) -> {
+                aOutput.set(ctx.get(Steps.outputOf("enrich-a")).map(Object::toString).orElse("missing"));
+                bOutput.set(ctx.get(Steps.outputOf("enrich-b")).map(Object::toString).orElse("missing"));
+                return in;
+            });
+
+            Workflow.<String, String>define("enrich-test")
+                    .parallel(a, b)
+                    .then(downstream)
+                    .run("x");
+
+            assertThat(aOutput.get()).isEqualTo("x-A");
+            assertThat(bOutput.get()).isEqualTo("x-B");
+        }
+
+        @Test
+        void parallelEnrichmentJoinShouldChainToNextStep() {
+            // After enrichment join, next step receives original input
+            Step<String, String> a = Step.named("branch-a", (ctx, in) -> in + "-A");
+            Step<String, String> b = Step.named("branch-b", (ctx, in) -> in + "-B");
+            Step<String, String> next = Step.named("next", (ctx, in) -> "next:" + in);
+
+            String result = Workflow.<String, String>define("chain-test")
+                    .parallel(a, b)
+                    .then(next)
+                    .run("x");
+
+            assertThat(result).isEqualTo("next:x");
+        }
+
+        @Test
+        void nestedParallelShouldEnrichContextAtEachLevel() {
+            // Sub-workflows used as branches — input passes through at each join
+            Workflow<String, String> innerAB = Workflow.<String, String>define("inner-ab")
                     .parallel(
                             Step.named("a", (ctx, in) -> in + "-A"),
                             Step.named("b", (ctx, in) -> in + "-B"))
                     .build();
 
-            Workflow<String, Object> innerCD = Workflow.<String, Object>define("inner-cd")
+            Workflow<String, String> innerCD = Workflow.<String, String>define("inner-cd")
                     .parallel(
                             Step.named("c", (ctx, in) -> in + "-C"),
                             Step.named("d", (ctx, in) -> in + "-D"))
                     .build();
 
-            // Outer parallel runs both inner parallels concurrently
-            List<Object> result = (List<Object>) Workflow.<String, Object>define("outer")
+            // Outer parallel: both sub-workflows run concurrently, input passes through
+            String result = Workflow.<String, String>define("outer")
                     .parallel(innerAB, innerCD)
                     .run("x");
 
-            // Outer collects two List<Object> results — one from each inner parallel
-            assertThat(result).hasSize(2);
-            List<Object> ab = (List<Object>) result.get(0);
-            List<Object> cd = (List<Object>) result.get(1);
-            assertThat(ab).containsExactlyInAnyOrder("x-A", "x-B");
-            assertThat(cd).containsExactlyInAnyOrder("x-C", "x-D");
+            assertThat(result).isEqualTo("x");
         }
     }
 

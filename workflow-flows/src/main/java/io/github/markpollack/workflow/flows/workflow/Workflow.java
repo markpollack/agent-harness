@@ -179,7 +179,7 @@ public final class Workflow<I, O> implements Step<I, O> {
                 edges.add(WorkflowEdge.sequence(branchNodeName, joinName));
             }
 
-            nodes.add(new WorkflowNode.JoinNode(joinName));
+            nodes.add(new WorkflowNode.JoinNode(joinName, WorkflowNode.JoinMode.ENRICHMENT));
             lastNodeName = joinName;
             return this;
         }
@@ -554,7 +554,7 @@ public final class Workflow<I, O> implements Step<I, O> {
                     new EdgeCondition.BooleanGuard(false), "false"));
             parent.addEdge(WorkflowEdge.sequence(elseName, joinName));
 
-            parent.addNode(new WorkflowNode.JoinNode(joinName));
+            parent.addNode(new WorkflowNode.JoinNode(joinName, WorkflowNode.JoinMode.ENRICHMENT));
             parent.setLastNodeName(joinName);
             return parent;
         }
@@ -615,7 +615,7 @@ public final class Workflow<I, O> implements Step<I, O> {
                 parent.addEdge(WorkflowEdge.sequence(optionNodeName, joinName));
             }
 
-            parent.addNode(new WorkflowNode.JoinNode(joinName));
+            parent.addNode(new WorkflowNode.JoinNode(joinName, WorkflowNode.JoinMode.ENRICHMENT));
             parent.setLastNodeName(joinName);
             return parent;
         }
@@ -719,7 +719,7 @@ public final class Workflow<I, O> implements Step<I, O> {
                 parent.addEdge(WorkflowEdge.sequence(timeoutName, joinName));
             }
 
-            parent.addNode(new WorkflowNode.JoinNode(joinName));
+            parent.addNode(new WorkflowNode.JoinNode(joinName, WorkflowNode.JoinMode.ENRICHMENT));
             parent.setLastNodeName(joinName);
             return parent;
         }

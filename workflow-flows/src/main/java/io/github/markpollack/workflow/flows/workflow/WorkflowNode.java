@@ -80,8 +80,19 @@ public sealed interface WorkflowNode permits
         @Override public NodeType type() { return NodeType.DETERMINISTIC; }
     }
 
-    /** Convergence point — XOR join passes value through; AND join collects branch results. */
-    record JoinNode(String name) implements WorkflowNode {
+    /**
+     * How a parallel join combines branch results.
+     * <ul>
+     *   <li>{@code ENRICHMENT} — input passes through unchanged; each branch writes its output
+     *       to context under {@code Steps.outputOf(stepName)}. Downstream reads by name.</li>
+     *   <li>{@code COLLECTION} — branch outputs collected into {@code List<Object>} passed as
+     *       the next step's input. Used for homogeneous fan-out where downstream aggregates.</li>
+     * </ul>
+     */
+    enum JoinMode { ENRICHMENT, COLLECTION }
+
+    /** Convergence point — join mode controls whether input passes through or results are collected. */
+    record JoinNode(String name, JoinMode joinMode) implements WorkflowNode {
         @Override public NodeType type() { return NodeType.DETERMINISTIC; }
     }
 }

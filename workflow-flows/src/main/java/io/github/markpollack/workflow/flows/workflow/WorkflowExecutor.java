@@ -77,8 +77,10 @@ public class WorkflowExecutor {
 
         // Per-loop iteration counters: "loop.<nodeName>.iteration" → count
         Map<String, Integer> loopCounters = new HashMap<>();
-        // Pending fork futures: forkNodeName → ordered branch futures
+        // Pending fork futures: joinNodeName → ordered branch futures
         Map<String, List<Future<BranchResult>>> pendingForks = new HashMap<>();
+        // Fork input values: joinNodeName → input value at fork time (for ENRICHMENT passthrough)
+        Map<String, Object> pendingForkInputs = new HashMap<>();
 
         logger.debug("Starting workflow '{}' at node '{}'", graph.name(), currentNodeName);
 
@@ -363,6 +365,7 @@ public class WorkflowExecutor {
 
                     // Jump directly to the join — no edge traversal needed
                     pendingForks.put(fn.joinNodeName(), futures);
+                    pendingForkInputs.put(fn.joinNodeName(), forkInput);
                     recordTransition(runId, graph.name(), previousNodeName, fn.name(),
                             Duration.between(start, Instant.now()), 0L, 0.0, fn.type(), null);
                     previousNodeName = currentNodeName;
@@ -375,7 +378,7 @@ public class WorkflowExecutor {
                     List<Future<BranchResult>> futures = pendingForks.remove(jn.name());
 
                     if (futures != null) {
-                        // AND-join: collect outputs and merge context writes from each branch
+                        // Parallel fork join: merge context from all branches
                         List<Object> results = new ArrayList<>();
                         for (Future<BranchResult> f : futures) {
                             try {
@@ -386,9 +389,17 @@ public class WorkflowExecutor {
                                 throw new RuntimeException("Parallel branch failed", e);
                             }
                         }
-                        currentValue = results;
+                        if (jn.joinMode() == WorkflowNode.JoinMode.COLLECTION) {
+                            // Collection join: downstream receives List<Object> of branch outputs
+                            currentValue = results;
+                        } else {
+                            // Enrichment join: input passes through; branches wrote to context keys
+                            currentValue = pendingForkInputs.remove(jn.name());
+                        }
+                    } else {
+                        pendingForkInputs.remove(jn.name()); // clean up if present
                     }
-                    // else: XOR-join (branch) — currentValue already set by the taken branch
+                    // XOR-join (branch/decision/gate): currentValue already set by the taken branch
 
                     recordTransition(runId, graph.name(), previousNodeName, jn.name(),
                             Duration.between(start, Instant.now()), 0L, 0.0, jn.type(), null);

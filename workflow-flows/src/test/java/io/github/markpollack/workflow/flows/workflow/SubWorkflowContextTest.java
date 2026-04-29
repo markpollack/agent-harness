@@ -187,16 +187,26 @@ class SubWorkflowContextTest {
         }
 
         @Test
-        @SuppressWarnings("unchecked")
-        void parallelOutputsShouldStillBeCollectedAsListAfterContextFix() {
+        void parallelEnrichmentJoinShouldPassInputThroughAndWriteToContext() {
+            // Enrichment join: input passes through; branch outputs in context
             Step<Object, Object> branchA = Step.named("branch-a", (ctx, in) -> "a");
             Step<Object, Object> branchB = Step.named("branch-b", (ctx, in) -> "b");
+            AtomicReference<Object> aOut = new AtomicReference<>();
+            AtomicReference<Object> bOut = new AtomicReference<>();
+            Step<Object, Object> read = Step.named("read", (ctx, in) -> {
+                aOut.set(ctx.get(io.github.markpollack.workflow.flows.steps.Steps.outputOf("branch-a")).orElse("missing"));
+                bOut.set(ctx.get(io.github.markpollack.workflow.flows.steps.Steps.outputOf("branch-b")).orElse("missing"));
+                return in;
+            });
 
-            List<Object> results = (List<Object>) Workflow.<String, Object>define("parallel-outputs")
+            Object result = Workflow.<String, Object>define("parallel-outputs")
                     .parallel(branchA, branchB)
+                    .then(read)
                     .run("input");
 
-            assertThat(results).containsExactly("a", "b");
+            assertThat(result).isEqualTo("input");
+            assertThat(aOut.get()).isEqualTo("a");
+            assertThat(bOut.get()).isEqualTo("b");
         }
     }
 
