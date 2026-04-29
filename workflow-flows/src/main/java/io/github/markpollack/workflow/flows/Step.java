@@ -145,20 +145,45 @@ public interface Step<I, O> {
      * }</pre>
      *
      * @param <T> the input and output type
-     * @return a no-op step
+     * @return a no-op step named "noop"
      */
     @SuppressWarnings("unchecked")
     static <T> Step<T, T> noop() {
         return (Step<T, T>) NoopStep.INSTANCE;
     }
+
+    /**
+     * Returns a named identity step that passes its input through as output.
+     * <p>
+     * Use when a named placeholder is needed in the IR — the name appears in traces
+     * and is referenceable by {@code WorkflowGraphAssert}:
+     * <pre>{@code
+     * .branch(__ -> config.skipAi())
+     *     .then(Step.noop("skip-ai"))
+     *     .otherwise(aiAssessment)
+     * }</pre>
+     *
+     * @param name the step name — visible in the WorkflowGraph and traces
+     * @param <T>  the input and output type
+     * @return a named no-op step
+     */
+    static <T> Step<T, T> noop(String name) {
+        return new NoopStep<>(name);
+    }
 }
 
 /**
- * Package-private singleton for the no-op step.
+ * Package-private implementation for the no-op step.
  */
 final class NoopStep<T> implements Step<T, T> {
 
-    static final NoopStep<?> INSTANCE = new NoopStep<>();
+    static final NoopStep<?> INSTANCE = new NoopStep<>("noop");
+
+    private final String name;
+
+    NoopStep(String name) {
+        this.name = name;
+    }
 
     @Override
     public T execute(AgentContext ctx, T input) {
@@ -167,11 +192,11 @@ final class NoopStep<T> implements Step<T, T> {
 
     @Override
     public String name() {
-        return "noop";
+        return name;
     }
 
     @Override
     public String toString() {
-        return "Step[noop]";
+        return "Step[" + name + "]";
     }
 }

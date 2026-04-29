@@ -115,6 +115,41 @@ class StepTest {
     }
 
     // -------------------------------------------------------------------------
+    // Step.noop(String name)
+    // -------------------------------------------------------------------------
+
+    @Test
+    void namedNoopShouldPassInputThrough() {
+        Step<String, String> noop = Step.noop("skip-ai");
+
+        assertThat(noop.execute(ctx, "hello")).isEqualTo("hello");
+    }
+
+    @Test
+    void namedNoopShouldUseGivenName() {
+        Step<String, String> noop = Step.noop("skip-ai");
+
+        assertThat(noop.name()).isEqualTo("skip-ai");
+    }
+
+    @Test
+    void namedNoopShouldBeDistinctFromUnnamedNoop() {
+        Step<String, String> unnamed = Step.noop();
+        Step<String, String> named = Step.noop("skip-ai");
+
+        assertThat(named).isNotSameAs(unnamed);
+        assertThat(named.name()).isEqualTo("skip-ai");
+        assertThat(unnamed.name()).isEqualTo("noop");
+    }
+
+    @Test
+    void namedNoopShouldIncludeNameInToString() {
+        Step<String, String> noop = Step.noop("skip-ai");
+
+        assertThat(noop.toString()).contains("skip-ai");
+    }
+
+    // -------------------------------------------------------------------------
     // Step.name() default implementation
     // -------------------------------------------------------------------------
 
