@@ -217,6 +217,7 @@ public class WorkflowExecutor {
                     @SuppressWarnings("unchecked")
                     Gate<Object> gate = (Gate<Object>) gateNode.gate();
                     GateDecision decision = gate.evaluate(ctx, currentValue);
+                    ctx = gate.updateContext(ctx, currentValue, decision);
 
                     // Verdict feedback: write Verdict to context on FAIL
                     if (decision == GateDecision.FAIL || decision == GateDecision.ESCALATE) {

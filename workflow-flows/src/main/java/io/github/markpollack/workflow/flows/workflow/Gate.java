@@ -27,4 +27,18 @@ public interface Gate<O> {
      * @return the gate decision (PASS, FAIL, ESCALATE, or TIMEOUT)
      */
     GateDecision evaluate(AgentContext ctx, O output);
+
+    /**
+     * Called by the executor immediately after {@link #evaluate}, before routing.
+     * Override to write gate results (judgment, score, decision) to context under typed keys,
+     * eliminating the need for a separate step to record gate output.
+     *
+     * @param ctx      the current context
+     * @param output   the output that was evaluated
+     * @param decision the decision returned by {@link #evaluate}
+     * @return updated context (or {@code ctx} unchanged if nothing to write)
+     */
+    default AgentContext updateContext(AgentContext ctx, O output, GateDecision decision) {
+        return ctx;
+    }
 }
