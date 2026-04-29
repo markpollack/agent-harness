@@ -152,6 +152,19 @@ public final class AgentContext {
         return new Builder(new HashMap<>(entries));
     }
 
+    /**
+     * Returns a new context with all entries from {@code donor} overlaid on this context.
+     * Entries present in {@code donor} take precedence over entries with the same key.
+     *
+     * @param donor the context whose entries to overlay onto this one
+     * @return a new merged context
+     */
+    public AgentContext mergeFrom(AgentContext donor) {
+        Map<ContextKey<?>, Object> merged = new HashMap<>(this.entries);
+        merged.putAll(donor.entries);
+        return new AgentContext(merged);
+    }
+
     // -------------------------------------------------------------------------
     // Builder
     // -------------------------------------------------------------------------

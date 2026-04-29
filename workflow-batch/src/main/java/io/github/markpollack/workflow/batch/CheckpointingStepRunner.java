@@ -56,7 +56,7 @@ public final class CheckpointingStepRunner implements StepRunner {
 		var existing = readRepo.findByRunIdAndStepName(runId, stepName);
 		if (existing.isPresent() && existing.get().getStatus() == BatchStatus.COMPLETED) {
 			log.debug("Step '{}' already completed for run '{}' — returning cached output", stepName, runId);
-			return (O) deserializeOutput(existing.get().getOutputPayload());
+			return (O) deserializeOutput(existing.get().getOutputPayload(), existing.get().getOutputType());
 		}
 
 		// Create STARTED record
@@ -70,11 +70,13 @@ public final class CheckpointingStepRunner implements StepRunner {
 
 			// Persist completed checkpoint
 			var now = Instant.now();
+			String outputType = output != null ? output.getClass().getName() : null;
 			String payload = serializeOutput(output);
 			writeRepo.updateCompleted(
 					execution.getId(),
 					BatchStatus.COMPLETED,
 					ExitStatus.COMPLETED,
+					outputType,
 					payload,
 					0L, 0, 0.0,
 					now, now);
@@ -115,13 +117,21 @@ public final class CheckpointingStepRunner implements StepRunner {
 		}
 	}
 
-	private Object deserializeOutput(String payload) {
+	private Object deserializeOutput(String payload, String outputType) {
 		if (payload == null) {
 			return null;
 		}
-		// For String outputs (the common case in agent workflows), return as-is
-		// JSON objects would need type information to deserialize properly
-		return payload;
+		if (outputType == null || String.class.getName().equals(outputType)) {
+			return payload;
+		}
+		try {
+			Class<?> type = Class.forName(outputType);
+			return objectMapper.readValue(payload, type);
+		}
+		catch (Exception e) {
+			log.warn("Failed to deserialize cached output as {} — returning raw string: {}", outputType, e.getMessage());
+			return payload;
+		}
 	}
 
 }

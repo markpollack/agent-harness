@@ -46,7 +46,7 @@ public interface AgentStepExecutionWriteRepository extends Repository<AgentStepE
 	@Query("""
 			UPDATE AgentStepExecution s
 			SET s.status = :status, s.exitStatus = :exitStatus,
-			    s.outputPayload = :outputPayload,
+			    s.outputType = :outputType, s.outputPayload = :outputPayload,
 			    s.tokensUsed = :tokensUsed, s.toolCallCount = :toolCallCount,
 			    s.costUsd = :costUsd,
 			    s.endTime = :endTime, s.lastUpdated = :now,
@@ -56,6 +56,7 @@ public interface AgentStepExecutionWriteRepository extends Repository<AgentStepE
 	void updateCompleted(@Param("stepId") UUID stepId,
 			@Param("status") BatchStatus status,
 			@Param("exitStatus") ExitStatus exitStatus,
+			@Param("outputType") String outputType,
 			@Param("outputPayload") String outputPayload,
 			@Param("tokensUsed") long tokensUsed,
 			@Param("toolCallCount") int toolCallCount,

@@ -206,6 +206,7 @@ class DurabilityIntegrationTest {
 					step.getId(),
 					BatchStatus.COMPLETED,
 					new ExitStatus("COMPLETED", "Summarized 3 documents"),
+					String.class.getName(),
 					"This is the summary output text",
 					3200L, 15, 0.058,
 					endTime, endTime);

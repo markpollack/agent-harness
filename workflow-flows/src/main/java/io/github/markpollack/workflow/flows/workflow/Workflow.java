@@ -45,8 +45,19 @@ public final class Workflow<I, O> implements Step<I, O> {
         return resolveExecutor().execute(graph, ctx, input);
     }
 
-    private WorkflowExecutor resolveExecutor() {
+    WorkflowExecutor resolveExecutor() {
         return executor != null ? executor : new WorkflowExecutor();
+    }
+
+    /**
+     * Returns this workflow's executor if one was explicitly configured (via
+     * {@code .withExecutor()}); otherwise returns {@code fallback}. Used by
+     * {@link WorkflowExecutor} so that sub-workflow leaf steps inherit the parent's
+     * {@link StepRunner} and {@link TraceRecorder} rather than defaulting to a
+     * fresh {@code LocalStepRunner}.
+     */
+    WorkflowExecutor resolveExecutorOr(WorkflowExecutor fallback) {
+        return executor != null ? executor : fallback;
     }
 
     public WorkflowGraph<I, O> graph() {

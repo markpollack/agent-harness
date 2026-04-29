@@ -93,6 +93,7 @@ class RepositoryTest {
 					step.getId(),
 					BatchStatus.COMPLETED,
 					ExitStatus.COMPLETED,
+					null,
 					"{\"result\":\"technical\"}",
 					1500L, 7, 0.025,
 					now, now);
@@ -141,7 +142,7 @@ class RepositoryTest {
 			var now = Instant.now();
 			writeRepo.updateCompleted(
 					step.getId(), BatchStatus.COMPLETED, ExitStatus.COMPLETED,
-					"{}", 0L, 0, 0.0, now, now);
+					null, "{}", 0L, 0, 0.0, now, now);
 			em.clear();
 
 			// Version is incremented by our explicit SET, not by @Version optimistic lock

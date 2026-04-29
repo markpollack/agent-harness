@@ -69,6 +69,9 @@ public class AgentStepExecution {
 	@Column(name = "tool_call_count", nullable = false)
 	private int toolCallCount;
 
+	@Column(name = "output_type", length = 512)
+	private String outputType;
+
 	@Column(name = "output_payload", columnDefinition = "TEXT")
 	private String outputPayload;
 
@@ -150,6 +153,14 @@ public class AgentStepExecution {
 
 	public void setToolCallCount(int toolCallCount) {
 		this.toolCallCount = toolCallCount;
+	}
+
+	public String getOutputType() {
+		return this.outputType;
+	}
+
+	public void setOutputType(String outputType) {
+		this.outputType = outputType;
 	}
 
 	public String getOutputPayload() {

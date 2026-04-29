@@ -16,7 +16,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.stream.Collectors;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Graph walker that executes a {@link WorkflowGraph} using Java 21 pattern matching switch.
@@ -57,8 +57,15 @@ public class WorkflowExecutor {
     public StepRunner stepRunner() { return stepRunner; }
     public TraceRecorder traceRecorder() { return traceRecorder; }
 
-    @SuppressWarnings({"unchecked", "rawtypes"})
+    private record BranchResult(Object output, AgentContext contextAfter) {}
+
     public <I, O> O execute(WorkflowGraph<I, O> graph, AgentContext ctx, I input, RunOptions options) {
+        return execute(graph, ctx, input, options, null);
+    }
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    public <I, O> O execute(WorkflowGraph<I, O> graph, AgentContext ctx, I input, RunOptions options,
+                             AtomicReference<AgentContext> contextOut) {
         int maxIterations = (options != null && options.maxIterations() > 0)
                 ? options.maxIterations() : DEFAULT_MAX_ITERATIONS;
 
@@ -71,7 +78,7 @@ public class WorkflowExecutor {
         // Per-loop iteration counters: "loop.<nodeName>.iteration" → count
         Map<String, Integer> loopCounters = new HashMap<>();
         // Pending fork futures: forkNodeName → ordered branch futures
-        Map<String, List<Future<Object>>> pendingForks = new HashMap<>();
+        Map<String, List<Future<BranchResult>>> pendingForks = new HashMap<>();
 
         logger.debug("Starting workflow '{}' at node '{}'", graph.name(), currentNodeName);
 
@@ -89,20 +96,34 @@ public class WorkflowExecutor {
                 case WorkflowNode.StepNode sn -> {
                     Instant stepStart = Instant.now();
                     Object output;
+                    Step step = sn.step();
+                    // Capture for sub-workflow inline execution (null for regular steps)
+                    AtomicReference<AgentContext> subCtxCapture = null;
                     try {
-                        Step step = sn.step();
-                        output = stepRunner.execute(step, ctx, currentValue);
+                        if (step instanceof Workflow<?, ?> subWorkflow) {
+                            // Sub-workflows run inline — bypasses stepRunner so Temporal and
+                            // other remote runners only see leaf steps as activities.
+                            // Inherits this executor so leaf steps inside the sub-workflow use
+                            // the same StepRunner (checkpointing, Temporal, etc.) as the parent.
+                            subCtxCapture = new AtomicReference<>(ctx);
+                            output = subWorkflow.resolveExecutorOr(this).execute(
+                                    (WorkflowGraph) subWorkflow.graph(), ctx, currentValue, null, subCtxCapture);
+                        } else {
+                            output = stepRunner.execute(step, ctx, currentValue);
+                        }
                     } catch (WorkflowAbortException e) {
                         recordTransition(runId, graph.name(), previousNodeName, sn.name(),
                                 Duration.between(stepStart, Instant.now()), 0L, 0.0, sn.type(), "abort");
                         logger.info("Workflow '{}' aborted at '{}' with result",
                                 graph.name(), sn.name());
+                        if (contextOut != null) contextOut.set(ctx);
                         return (O) e.getResult();
                     } catch (WorkflowTerminatedException e) {
                         recordTransition(runId, graph.name(), previousNodeName, sn.name(),
                                 Duration.between(stepStart, Instant.now()), 0L, 0.0, sn.type(), null);
                         logger.info("Workflow '{}' terminated at '{}': {} - {}",
                                 graph.name(), sn.name(), e.status(), e.getMessage());
+                        if (contextOut != null) contextOut.set(ctx);
                         return null;
                     } catch (Exception e) {
                         Duration dur = Duration.between(stepStart, Instant.now());
@@ -122,15 +143,21 @@ public class WorkflowExecutor {
                             Duration.between(stepStart, Instant.now()), 0L, 0.0, sn.type(), null);
                     currentValue = output;
 
-                    // Auto-propagate step output into context (DD-15)
-                    ctx = ctx.mutate()
-                            .with(io.github.markpollack.workflow.flows.steps.Steps.outputOf(sn.step().name()), output)
-                            .build();
-
-                    // Let step publish additional context entries (updateContext)
-                    @SuppressWarnings("unchecked")
-                    Step<Object, Object> typedStep = (Step<Object, Object>) sn.step();
-                    ctx = typedStep.updateContext(ctx, output);
+                    if (subCtxCapture != null) {
+                        // Sub-workflow: merge its final context back into the parent
+                        ctx = ctx.mergeFrom(subCtxCapture.get());
+                        ctx = ctx.mutate()
+                                .with(io.github.markpollack.workflow.flows.steps.Steps.outputOf(step.name()), output)
+                                .build();
+                    } else {
+                        // Regular step: auto-propagate output and call updateContext()
+                        ctx = ctx.mutate()
+                                .with(io.github.markpollack.workflow.flows.steps.Steps.outputOf(step.name()), output)
+                                .build();
+                        @SuppressWarnings("unchecked")
+                        Step<Object, Object> typedStep = (Step<Object, Object>) step;
+                        ctx = typedStep.updateContext(ctx, output);
+                    }
 
                     // Advance to next node
                     previousNodeName = currentNodeName;
@@ -152,6 +179,7 @@ public class WorkflowExecutor {
                         String next = findNonErrorSuccessor(graph, currentNodeName);
                         if (next == null) {
                             // Terminal node (finish or only-error-edges)
+                            if (contextOut != null) contextOut.set(ctx);
                             return (O) currentValue;
                         }
                         currentNodeName = next;
@@ -288,6 +316,7 @@ public class WorkflowExecutor {
                     previousNodeName = currentNodeName;
                     String next = graph.unconditionalSuccessor(lx.name());
                     if (next == null) {
+                        if (contextOut != null) contextOut.set(ctx);
                         return (O) currentValue;
                     }
                     currentNodeName = next;
@@ -302,14 +331,31 @@ public class WorkflowExecutor {
 
                     final Object forkInput = currentValue;
                     final AgentContext forkCtx = ctx;
-                    List<Future<Object>> futures = new ArrayList<>();
+                    List<Future<BranchResult>> futures = new ArrayList<>();
                     for (WorkflowEdge be : branchEdges) {
                         String branchNodeName = be.to();
                         WorkflowNode branchNode = graph.nodeByName(branchNodeName);
                         if (branchNode instanceof WorkflowNode.StepNode bsn) {
                             futures.add(parallelExecutor.submit(() -> {
-                                Step step = bsn.step();
-                                return stepRunner.execute(step, forkCtx, forkInput);
+                                Step<Object, Object> typedBranchStep = (Step<Object, Object>) bsn.step();
+                                Object out;
+                                AgentContext branchCtx;
+                                if (typedBranchStep instanceof Workflow<?, ?> subWorkflow) {
+                                    AtomicReference<AgentContext> subCapture = new AtomicReference<>(forkCtx);
+                                    out = subWorkflow.resolveExecutorOr(WorkflowExecutor.this).execute(
+                                            (WorkflowGraph) subWorkflow.graph(), forkCtx, forkInput, null, subCapture);
+                                    branchCtx = forkCtx.mergeFrom(subCapture.get());
+                                    branchCtx = branchCtx.mutate()
+                                            .with(io.github.markpollack.workflow.flows.steps.Steps.outputOf(typedBranchStep.name()), out)
+                                            .build();
+                                } else {
+                                    out = stepRunner.execute(typedBranchStep, forkCtx, forkInput);
+                                    branchCtx = forkCtx.mutate()
+                                            .with(io.github.markpollack.workflow.flows.steps.Steps.outputOf(typedBranchStep.name()), out)
+                                            .build();
+                                    branchCtx = typedBranchStep.updateContext(branchCtx, out);
+                                }
+                                return new BranchResult(out, branchCtx);
                             }));
                         }
                     }
@@ -325,18 +371,20 @@ public class WorkflowExecutor {
                 case WorkflowNode.JoinNode jn -> {
                     Instant start = Instant.now();
                     // Retrieve futures keyed by this join's name (written by ForkNode handler)
-                    List<Future<Object>> futures = pendingForks.remove(jn.name());
+                    List<Future<BranchResult>> futures = pendingForks.remove(jn.name());
 
                     if (futures != null) {
-                        // AND-join: collect results in BranchIndex order
-                        List<Object> results = futures.stream()
-                                .map(f -> {
-                                    try { return f.get(); }
-                                    catch (Exception e) {
-                                        throw new RuntimeException("Parallel branch failed", e);
-                                    }
-                                })
-                                .collect(Collectors.toList());
+                        // AND-join: collect outputs and merge context writes from each branch
+                        List<Object> results = new ArrayList<>();
+                        for (Future<BranchResult> f : futures) {
+                            try {
+                                BranchResult br = f.get();
+                                results.add(br.output());
+                                ctx = ctx.mergeFrom(br.contextAfter());
+                            } catch (Exception e) {
+                                throw new RuntimeException("Parallel branch failed", e);
+                            }
+                        }
                         currentValue = results;
                     }
                     // else: XOR-join (branch) — currentValue already set by the taken branch
@@ -346,6 +394,7 @@ public class WorkflowExecutor {
                     previousNodeName = currentNodeName;
                     String next = graph.unconditionalSuccessor(jn.name());
                     if (next == null) {
+                        if (contextOut != null) contextOut.set(ctx);
                         return (O) currentValue;
                     }
                     currentNodeName = next;
@@ -355,7 +404,7 @@ public class WorkflowExecutor {
     }
 
     public <I, O> O execute(WorkflowGraph<I, O> graph, AgentContext ctx, I input) {
-        return execute(graph, ctx, input, null);
+        return execute(graph, ctx, input, null, null);
     }
 
     // -- Helpers --
