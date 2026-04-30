@@ -5,34 +5,27 @@ import io.github.markpollack.workflow.patterns.graph.NodeType;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /**
  * Records a single step completion in a workflow execution.
- * <p>
- * Maps directly from {@link io.github.markpollack.workflow.flows.workflow.StepTransition}.
- * Stored in a journal {@link io.github.markpollack.journal.Run} via
- * {@link JournalTraceRecorder}.
+ * Implements {@link JournalEvent} so it is stored as a typed event in the journal ledger.
  *
- * <p><strong>Design note</strong>: {@code JournalEvent} is a sealed interface in
- * journal-core. This record cannot implement it until {@code WorkflowStepEvent} is
- * added to the {@code permits} clause in journal-core and a new journal-core release
- * is cut. See ROADMAP Step 2.5 for the two-phase delivery plan.
- * <p>
- * Interim workaround (not yet implemented): wrap step data in {@code CustomEvent}
- * until journal-core is updated.
+ * <p>Register at startup via {@code Journal.registerEventType("workflow_step", WorkflowStepEvent.class)}
+ * so the JSON storage can deserialize it back to this type.
  *
- * @param timestamp       when this step completed
- * @param workflowRunId   the workflow run identifier
- * @param workflowName    the workflow name
- * @param stepName        the node that just executed
- * @param fromStep        the preceding node (null for the first step)
- * @param nodeType        DETERMINISTIC or AGENT
- * @param stepDuration    wall-clock time the step took
- * @param tokensUsed      tokens consumed (0 if not yet tracked at step level)
- * @param costUsd         estimated USD cost (0.0 if not yet tracked at step level)
- * @param routingLabel    branch/gate label, or null for sequential steps
+ * @param timestamp     when this step completed
+ * @param workflowRunId the workflow run identifier
+ * @param workflowName  the workflow name
+ * @param stepName      the node that just executed
+ * @param fromStep      the preceding node (null for the first step)
+ * @param nodeType      DETERMINISTIC or AGENT
+ * @param stepDuration  wall-clock time the step took
+ * @param tokensUsed    tokens consumed (0 if not tracked at step level)
+ * @param costUsd       estimated USD cost (0.0 if not tracked at step level)
+ * @param routingLabel  branch/gate label, or null for sequential steps
  */
-// TODO: add `implements JournalEvent` once journal-core adds WorkflowStepEvent to its sealed permits
 public record WorkflowStepEvent(
         Instant timestamp,
         String workflowRunId,
@@ -44,8 +37,31 @@ public record WorkflowStepEvent(
         long tokensUsed,
         double costUsd,
         String routingLabel
-) {
+) implements JournalEvent {
+
+    @Override
     public String type() {
         return "workflow_step";
+    }
+
+    @Override
+    public Map<String, Object> toMap() {
+        var map = new LinkedHashMap<String, Object>();
+        map.put("type", type());
+        map.put("timestamp", timestamp.toString());
+        map.put("workflowRunId", workflowRunId);
+        map.put("workflowName", workflowName);
+        map.put("stepName", stepName);
+        if (fromStep != null) {
+            map.put("fromStep", fromStep);
+        }
+        map.put("nodeType", nodeType.name());
+        map.put("stepDurationMs", stepDuration.toMillis());
+        map.put("tokensUsed", tokensUsed);
+        map.put("costUsd", costUsd);
+        if (routingLabel != null) {
+            map.put("routingLabel", routingLabel);
+        }
+        return map;
     }
 }
