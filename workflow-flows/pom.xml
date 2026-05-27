@@ -47,6 +47,14 @@
             <optional>true</optional>
         </dependency>
 
+        <!-- Anthropic Java SDK (optional — ManagedAgentStep) -->
+        <dependency>
+            <groupId>com.anthropic</groupId>
+            <artifactId>anthropic-java</artifactId>
+            <version>2.34.0</version>
+            <optional>true</optional>
+        </dependency>
+
         <!-- Agent Judge (optional — JudgeGate, TieredGate) -->
         <dependency>
             <groupId>org.springaicommunity</groupId>

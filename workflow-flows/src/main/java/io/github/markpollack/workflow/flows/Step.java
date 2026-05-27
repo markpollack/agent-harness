@@ -39,6 +39,7 @@ import java.util.function.BiFunction;
  *   <li>{@link io.github.markpollack.workflow.flows.steps.ChatClientStep} — single structured LLM call via spring-ai</li>
  *   <li>{@link io.github.markpollack.workflow.flows.steps.AgentClientStep} — via AgentClient abstraction</li>
  *   <li>{@link io.github.markpollack.workflow.flows.steps.GraphStep} — wraps a GraphCompositionStrategy</li>
+ *   <li>{@link io.github.markpollack.workflow.flows.steps.ManagedAgentStep} — delegates to Anthropic Managed Agents</li>
  * </ul>
  *
  * @param <I> the input type
