@@ -193,11 +193,6 @@ public class ClaudeStep implements Step<String, String>, AgentStep {
         command.add("--output-format");
         command.add("text");
 
-        if (workingDirectory != null) {
-            command.add("--cwd");
-            command.add(workingDirectory.toAbsolutePath().toString());
-        }
-
         if (!mcpConfigs.isEmpty()) {
             try {
                 Path mcpConfigFile = writeMcpConfigFile();
