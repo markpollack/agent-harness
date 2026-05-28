@@ -39,19 +39,20 @@ public final class JdbcTraceRecorder implements TraceRecorder {
 			    tokens_used BIGINT NOT NULL,
 			    cost_usd DOUBLE NOT NULL,
 			    node_type VARCHAR(20) NOT NULL,
-			    label VARCHAR(255)
+			    label VARCHAR(255),
+			    trace_path VARCHAR(1024)
 			)
 			""";
 
 	private static final String INSERT = """
 			INSERT INTO step_transitions (run_id, workflow_name, from_step, to_step, timestamp,
-			    duration_ms, tokens_used, cost_usd, node_type, label)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			    duration_ms, tokens_used, cost_usd, node_type, label, trace_path)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			""";
 
 	private static final String SELECT_BY_RUN = """
 			SELECT run_id, workflow_name, from_step, to_step, timestamp,
-			    duration_ms, tokens_used, cost_usd, node_type, label
+			    duration_ms, tokens_used, cost_usd, node_type, label, trace_path
 			FROM step_transitions WHERE run_id = ? ORDER BY id
 			""";
 
@@ -80,7 +81,8 @@ public final class JdbcTraceRecorder implements TraceRecorder {
 				transition.tokensUsed(),
 				transition.costUsd(),
 				transition.nodeType().name(),
-				transition.label());
+				transition.label(),
+				transition.tracePath());
 	}
 
 	@Override
@@ -96,7 +98,8 @@ public final class JdbcTraceRecorder implements TraceRecorder {
 				rs.getLong("tokens_used"),
 				rs.getDouble("cost_usd"),
 				NodeType.valueOf(rs.getString("node_type")),
-				rs.getString("label")
+				rs.getString("label"),
+				rs.getString("trace_path")
 		), workflowRunId);
 	}
 

@@ -142,8 +142,7 @@ public class WorkflowExecutor {
                         }
                         throw e;
                     }
-                    recordTransition(runId, graph.name(), previousNodeName, sn.name(),
-                            Duration.between(stepStart, Instant.now()), 0L, 0.0, sn.type(), null);
+                    Duration stepDuration = Duration.between(stepStart, Instant.now());
                     currentValue = output;
 
                     if (subCtxCapture != null) {
@@ -160,6 +159,15 @@ public class WorkflowExecutor {
                         @SuppressWarnings("unchecked")
                         Step<Object, Object> typedStep = (Step<Object, Object>) step;
                         ctx = typedStep.updateContext(ctx, output);
+                    }
+
+                    // Read trace path set by AgentClientStep.updateContext(), then record transition
+                    String tracePath = ctx.get(AgentContext.TRACE_PATH).orElse(null);
+                    recordTransition(runId, graph.name(), previousNodeName, sn.name(),
+                            stepDuration, 0L, 0.0, sn.type(), null, tracePath);
+                    // Clear trace path so the next step doesn't inherit it
+                    if (tracePath != null) {
+                        ctx = ctx.mutate().without(AgentContext.TRACE_PATH).build();
                     }
 
                     // Advance to next node
@@ -456,9 +464,17 @@ public class WorkflowExecutor {
                                    String toStep, Duration duration, long tokens, double cost,
                                    io.github.markpollack.workflow.patterns.graph.NodeType nodeType,
                                    String label) {
+        recordTransition(runId, workflowName, fromStep, toStep, duration, tokens, cost,
+                nodeType, label, null);
+    }
+
+    private void recordTransition(String runId, String workflowName, String fromStep,
+                                   String toStep, Duration duration, long tokens, double cost,
+                                   io.github.markpollack.workflow.patterns.graph.NodeType nodeType,
+                                   String label, String tracePath) {
         traceRecorder.record(new StepTransition(
                 runId, workflowName, fromStep, toStep,
-                Instant.now(), duration, tokens, cost, nodeType, label
+                Instant.now(), duration, tokens, cost, nodeType, label, tracePath
         ));
     }
 }

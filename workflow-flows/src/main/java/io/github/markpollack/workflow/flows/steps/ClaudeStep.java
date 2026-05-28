@@ -33,14 +33,22 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * A {@link Step} that runs a full Claude agentic loop.
+ * A {@link Step} that runs a full Claude agentic loop via the CLI subprocess.
  * <p>
  * {@code ClaudeStep} invokes the {@code claude} CLI in print mode ({@code -p}) and
- * blocks until Claude decides it is done. Claude drives the tool-calling loop
- * internally — this step is the right choice for: code review, implementation,
- * research, and exploration tasks.
+ * blocks until Claude decides it is done. The subprocess returns text only —
+ * tool-call traces, token counts, and cost data are discarded at the process boundary.
+ *
+ * <h2>When to use</h2>
  * <p>
- * Configuration is via a fluent builder:
+ * Use {@code ClaudeStep} for quick, self-contained scripts where trace capture is
+ * not needed. For experiments and production workflows that require tool-call
+ * traces (e.g. Markov analysis), use {@link AgentClientStep} backed by a
+ * {@code ClaudeAgentModel} with {@code traceDir} configured — this preserves
+ * full execution traces as JSONL files and wires the trace path through the
+ * workflow journal.
+ *
+ * <h2>Configuration</h2>
  * <pre>{@code
  * ClaudeStep.of("analyze this diff and identify concerns: {input}")
  *     .workingDirectory(repoPath)

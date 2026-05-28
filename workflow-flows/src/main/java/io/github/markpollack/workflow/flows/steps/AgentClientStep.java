@@ -46,6 +46,8 @@ public class AgentClientStep implements Step<String, String>, AgentStep {
     private final AgentClient client;
     private final String promptTemplate;
 
+    private volatile String lastTracePath;
+
     private AgentClientStep(AgentClient client, String promptTemplate) {
         this.client = Objects.requireNonNull(client, "client must not be null");
         this.promptTemplate = Objects.requireNonNull(promptTemplate, "promptTemplate must not be null");
@@ -70,6 +72,19 @@ public class AgentClientStep implements Step<String, String>, AgentStep {
     @Override
     public String execute(AgentContext ctx, String input) {
         String resolved = promptTemplate.replace("{input}", input != null ? input : "");
-        return client.execute(resolved, ctx);
+        AgentClient.ExecutionResult result = client.executeForResult(resolved, ctx);
+        this.lastTracePath = result.tracePath();
+        return result.text();
+    }
+
+    @Override
+    public AgentContext updateContext(AgentContext ctx, String output) {
+        String tracePath = this.lastTracePath;
+        if (tracePath != null) {
+            return ctx.mutate()
+                    .with(AgentContext.TRACE_PATH, tracePath)
+                    .build();
+        }
+        return ctx;
     }
 }

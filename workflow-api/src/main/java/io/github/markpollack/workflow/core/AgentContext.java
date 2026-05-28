@@ -58,6 +58,10 @@ public final class AgentContext {
     public static final ContextKey<String> JUDGE_REFLECTION =
             ContextKey.of("judgeReflection", String.class);
 
+    /** Trace file path from the most recent agent step execution. */
+    public static final ContextKey<String> TRACE_PATH =
+            ContextKey.of("tracePath", String.class);
+
     // -------------------------------------------------------------------------
     // Internal state
     // -------------------------------------------------------------------------
@@ -195,6 +199,17 @@ public final class AgentContext {
             Objects.requireNonNull(key, "key must not be null");
             Objects.requireNonNull(value, "value must not be null");
             entries.put(key, value);
+            return this;
+        }
+
+        /**
+         * Removes a key from the context being built.
+         *
+         * @param key the context key to remove
+         * @return this builder
+         */
+        public Builder without(ContextKey<?> key) {
+            entries.remove(key);
             return this;
         }
 

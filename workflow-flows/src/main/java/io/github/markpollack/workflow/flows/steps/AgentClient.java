@@ -43,4 +43,27 @@ public interface AgentClient {
      * @return the agent's text response
      */
     String execute(String prompt, AgentContext ctx);
+
+    /**
+     * Result of an agent execution including optional trace metadata.
+     *
+     * @param text      the agent's text response
+     * @param tracePath absolute path to the trace file, or {@code null} if tracing is not enabled
+     */
+    record ExecutionResult(String text, String tracePath) {}
+
+    /**
+     * Executes the agent and returns the text result with optional trace metadata.
+     * <p>
+     * The default implementation delegates to {@link #execute(String, AgentContext)}
+     * with no trace path. Override in trace-aware implementations to return the
+     * trace file path alongside the response text.
+     *
+     * @param prompt the fully resolved prompt
+     * @param ctx    the shared execution context
+     * @return the execution result with text and optional trace path
+     */
+    default ExecutionResult executeForResult(String prompt, AgentContext ctx) {
+        return new ExecutionResult(execute(prompt, ctx), null);
+    }
 }

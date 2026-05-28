@@ -56,4 +56,38 @@ class AgentClientStepTest {
 
         assertThat(step.execute(ctx, "ignored")).isEqualTo("static prompt");
     }
+
+    @Test
+    void executeForResultShouldPropagateTracePathToContext() {
+        AgentClient traceClient = new AgentClient() {
+            @Override
+            public String execute(String prompt, AgentContext c) {
+                return "text";
+            }
+
+            @Override
+            public ExecutionResult executeForResult(String prompt, AgentContext c) {
+                return new ExecutionResult("analyzed", "/tmp/traces/step-001.jsonl");
+            }
+        };
+        AgentClientStep step = AgentClientStep.of(traceClient, "analyze: {input}");
+
+        String result = step.execute(ctx, "data");
+        assertThat(result).isEqualTo("analyzed");
+
+        AgentContext updated = step.updateContext(ctx, result);
+        assertThat(updated.get(AgentContext.TRACE_PATH))
+                .hasValue("/tmp/traces/step-001.jsonl");
+    }
+
+    @Test
+    void lambdaClientShouldNotSetTracePath() {
+        AgentClient lambda = (prompt, c) -> "response";
+        AgentClientStep step = AgentClientStep.of(lambda, "{input}");
+
+        String result = step.execute(ctx, "hello");
+        AgentContext updated = step.updateContext(ctx, result);
+
+        assertThat(updated.get(AgentContext.TRACE_PATH)).isEmpty();
+    }
 }

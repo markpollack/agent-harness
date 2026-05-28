@@ -115,6 +115,51 @@ class JournalTraceRecorderTest {
     }
 
     @Test
+    @DisplayName("records trace path when present on transition")
+    void recordsTracePath() {
+        String runId;
+        try (Run run = Journal.run("test-experiment").start()) {
+            runId = run.id();
+            TraceRecorder recorder = WorkflowJournal.forRun(run);
+
+            recorder.record(new StepTransition(
+                    "run-trace", "remediate", "scan", "fix",
+                    Instant.now(), Duration.ofSeconds(12), 3200L, 0.048, NodeType.AGENT,
+                    null, "/tmp/traces/fix-20260528.jsonl"
+            ));
+        }
+
+        WorkflowStepEvent event = storage.loadEvents("test-experiment", runId).stream()
+                .filter(WorkflowStepEvent.class::isInstance)
+                .map(WorkflowStepEvent.class::cast)
+                .findFirst().orElseThrow();
+        assertThat(event.tracePath()).isEqualTo("/tmp/traces/fix-20260528.jsonl");
+        assertThat(event.toMap()).containsEntry("tracePath", "/tmp/traces/fix-20260528.jsonl");
+    }
+
+    @Test
+    @DisplayName("omits tracePath from map when null")
+    void omitsNullTracePath() {
+        String runId;
+        try (Run run = Journal.run("test-experiment").start()) {
+            runId = run.id();
+            TraceRecorder recorder = WorkflowJournal.forRun(run);
+
+            recorder.record(new StepTransition(
+                    "run-no-trace", "workflow", null, "step-det",
+                    Instant.now(), Duration.ofMillis(20), 0L, 0.0, NodeType.DETERMINISTIC
+            ));
+        }
+
+        WorkflowStepEvent event = storage.loadEvents("test-experiment", runId).stream()
+                .filter(WorkflowStepEvent.class::isInstance)
+                .map(WorkflowStepEvent.class::cast)
+                .findFirst().orElseThrow();
+        assertThat(event.tracePath()).isNull();
+        assertThat(event.toMap()).doesNotContainKey("tracePath");
+    }
+
+    @Test
     @DisplayName("getTrace returns empty list — journal is the source of truth")
     void getTraceReturnsEmpty() {
         try (Run run = Journal.run("test-experiment").start()) {

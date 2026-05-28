@@ -25,6 +25,7 @@ import java.util.Map;
  * @param tokensUsed    tokens consumed (0 if not tracked at step level)
  * @param costUsd       estimated USD cost (0.0 if not tracked at step level)
  * @param routingLabel  branch/gate label, or null for sequential steps
+ * @param tracePath     absolute path to the step's trace file, or null if tracing is not enabled
  */
 public record WorkflowStepEvent(
         Instant timestamp,
@@ -36,8 +37,25 @@ public record WorkflowStepEvent(
         Duration stepDuration,
         long tokensUsed,
         double costUsd,
-        String routingLabel
+        String routingLabel,
+        String tracePath
 ) implements JournalEvent {
+
+    /** Backward-compat constructor without tracePath. */
+    public WorkflowStepEvent(
+            Instant timestamp,
+            String workflowRunId,
+            String workflowName,
+            String stepName,
+            String fromStep,
+            NodeType nodeType,
+            Duration stepDuration,
+            long tokensUsed,
+            double costUsd,
+            String routingLabel) {
+        this(timestamp, workflowRunId, workflowName, stepName, fromStep, nodeType,
+                stepDuration, tokensUsed, costUsd, routingLabel, null);
+    }
 
     @Override
     public String type() {
@@ -61,6 +79,9 @@ public record WorkflowStepEvent(
         map.put("costUsd", costUsd);
         if (routingLabel != null) {
             map.put("routingLabel", routingLabel);
+        }
+        if (tracePath != null) {
+            map.put("tracePath", tracePath);
         }
         return map;
     }

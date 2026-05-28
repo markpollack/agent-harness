@@ -62,7 +62,8 @@ public final class JournalTraceRecorder implements TraceRecorder {
                 transition.stepDuration(),
                 transition.tokensUsed(),
                 transition.costUsd(),
-                transition.label()
+                transition.label(),
+                transition.tracePath()
         ));
 
         run.logMetric("workflow.steps.total", 1);
