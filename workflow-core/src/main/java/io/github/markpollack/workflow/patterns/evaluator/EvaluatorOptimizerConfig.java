@@ -15,7 +15,7 @@
  */
 package io.github.markpollack.workflow.patterns.evaluator;
 
-import org.springaicommunity.judge.jury.Jury;
+import io.github.markpollack.judge.jury.Jury;
 
 import java.nio.file.Path;
 import java.time.Duration;

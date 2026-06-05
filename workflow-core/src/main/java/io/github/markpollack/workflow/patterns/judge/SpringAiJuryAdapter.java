@@ -18,11 +18,11 @@ package io.github.markpollack.workflow.patterns.judge;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import io.github.markpollack.workflow.core.LoopState;
-import org.springaicommunity.judge.context.ExecutionStatus;
-import org.springaicommunity.judge.context.JudgmentContext;
-import org.springaicommunity.judge.jury.Jury;
-import org.springaicommunity.judge.jury.Verdict;
-import org.springaicommunity.judge.score.Scores;
+import io.github.markpollack.judge.context.ExecutionStatus;
+import io.github.markpollack.judge.context.JudgmentContext;
+import io.github.markpollack.judge.jury.Jury;
+import io.github.markpollack.judge.jury.Verdict;
+import io.github.markpollack.judge.score.Scores;
 import org.springframework.ai.chat.model.ChatResponse;
 
 import java.nio.file.Path;

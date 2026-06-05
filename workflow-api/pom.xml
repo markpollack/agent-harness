@@ -27,14 +27,8 @@
 
         <!-- Agent Judge (for Verdict type in TerminationStrategy) -->
         <dependency>
-            <groupId>org.springaicommunity</groupId>
+            <groupId>io.github.markpollack</groupId>
             <artifactId>agent-judge-core</artifactId>
-        </dependency>
-
-        <!-- Spring AI Agent Utils (for AskUserQuestionTool.Question type) -->
-        <dependency>
-            <groupId>org.springaicommunity</groupId>
-            <artifactId>spring-ai-agent-utils</artifactId>
         </dependency>
 
         <!-- Reactor for async -->

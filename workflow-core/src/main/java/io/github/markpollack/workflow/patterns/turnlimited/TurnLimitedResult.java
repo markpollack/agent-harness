@@ -19,8 +19,8 @@ import io.github.markpollack.workflow.core.LoopResult;
 import io.github.markpollack.workflow.core.LoopState;
 import io.github.markpollack.workflow.core.LoopStatus;
 import io.github.markpollack.workflow.core.TerminationReason;
-import org.springaicommunity.judge.jury.Verdict;
-import org.springaicommunity.judge.score.Scores;
+import io.github.markpollack.judge.jury.Verdict;
+import io.github.markpollack.judge.score.Scores;
 import org.springframework.lang.Nullable;
 
 import java.time.Duration;

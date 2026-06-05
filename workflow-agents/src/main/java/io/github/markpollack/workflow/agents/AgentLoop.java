@@ -104,10 +104,12 @@ public class AgentLoop {
         annotatedToolObjects.add(new SubmitTool());
         annotatedToolObjects.add(TodoWriteTool.builder().build());
 
-        // Add AskUserQuestionTool if interactive mode and callback provided
+        // Add AskUserQuestionTool if interactive mode and callback provided.
+        // The tool's Question schema is mapped onto the workflow-api Question
+        // record so the AgentCallback SPI stays free of tool-library types.
         if (interactive && builder.agentCallback != null) {
             annotatedToolObjects.add(AskUserQuestionTool.builder()
-                    .questionHandler(questions -> builder.agentCallback.onQuestion(questions))
+                    .questionHandler(questions -> builder.agentCallback.onQuestion(toCallbackQuestions(questions)))
                     .build());
         }
 
@@ -173,6 +175,24 @@ public class AgentLoop {
         }
 
         this.chatClient = chatClientBuilder.build();
+    }
+
+    /**
+     * Map the AskUserQuestionTool's question schema onto the tool-agnostic
+     * workflow-api {@link io.github.markpollack.workflow.callback.Question}
+     * record used by the {@link AgentCallback} SPI.
+     */
+    private static List<io.github.markpollack.workflow.callback.Question> toCallbackQuestions(
+            List<AskUserQuestionTool.Question> questions) {
+        return questions.stream()
+                .map(q -> new io.github.markpollack.workflow.callback.Question(
+                        q.question(), q.header(),
+                        q.options().stream()
+                                .map(o -> new io.github.markpollack.workflow.callback.Question.Option(
+                                        o.label(), o.description()))
+                                .toList(),
+                        q.multiSelect()))
+                .toList();
     }
 
     /**

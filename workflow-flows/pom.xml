@@ -57,9 +57,9 @@
 
         <!-- Agent Judge (optional — JudgeGate, TieredGate) -->
         <dependency>
-            <groupId>org.springaicommunity</groupId>
+            <groupId>io.github.markpollack</groupId>
             <artifactId>agent-judge-core</artifactId>
-            <version>0.9.1</version>
+            <version>${agent-judge.version}</version>
             <optional>true</optional>
         </dependency>
 

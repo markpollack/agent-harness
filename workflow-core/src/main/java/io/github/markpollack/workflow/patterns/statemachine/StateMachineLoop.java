@@ -26,8 +26,8 @@ import io.github.markpollack.workflow.patterns.statemachine.StateMachineConfig.T
 import io.github.markpollack.workflow.strategy.TerminationStrategy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springaicommunity.judge.jury.Verdict;
-import org.springaicommunity.judge.score.Scores;
+import io.github.markpollack.judge.jury.Verdict;
+import io.github.markpollack.judge.score.Scores;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.tool.ToolCallback;

@@ -18,8 +18,6 @@ package io.github.markpollack.workflow.callback;
 import java.util.List;
 import java.util.Map;
 
-import org.springaicommunity.agent.tools.AskUserQuestionTool.Question;
-
 /**
  * Callback interface for receiving events from an agent during execution.
  *
@@ -68,7 +66,7 @@ public interface AgentCallback {
 	 * answers are returned. The returned map should have question text
 	 * as keys and selected option labels (or custom text) as values.
 	 *
-	 * <p>Reuses {@link Question} from spring-ai-agent-utils to maintain
+	 * <p>Uses the workflow-api {@link Question} record to maintain
 	 * compatibility with the AskUserQuestionTool schema.
 	 *
 	 * @param questions the questions to present to the user (1-4 questions)

@@ -4,10 +4,10 @@ import io.github.markpollack.workflow.core.AgentContext;
 import io.github.markpollack.workflow.flows.Step;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
-import org.springaicommunity.judge.jury.Jury;
-import org.springaicommunity.judge.jury.Verdict;
-import org.springaicommunity.judge.result.Judgment;
-import org.springaicommunity.judge.score.NumericalScore;
+import io.github.markpollack.judge.jury.Jury;
+import io.github.markpollack.judge.jury.Verdict;
+import io.github.markpollack.judge.result.Judgment;
+import io.github.markpollack.judge.score.NumericalScore;
 
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
@@ -337,8 +337,8 @@ class GateTest {
                 .aggregated(Judgment.builder()
                         .score(new NumericalScore(score, 0.0, 1.0))
                         .status(score >= 0.5
-                                ? org.springaicommunity.judge.result.JudgmentStatus.PASS
-                                : org.springaicommunity.judge.result.JudgmentStatus.FAIL)
+                                ? io.github.markpollack.judge.result.JudgmentStatus.PASS
+                                : io.github.markpollack.judge.result.JudgmentStatus.FAIL)
                         .reasoning("Score: " + score)
                         .build())
                 .individual(List.of())

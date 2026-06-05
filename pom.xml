@@ -63,7 +63,7 @@
         <logback.version>1.5.15</logback.version>
         <micrometer.version>1.14.2</micrometer.version>
         <spring-ai.version>2.0.0-M3</spring-ai.version>
-        <agent-judge.version>0.9.0</agent-judge.version>
+        <agent-judge.version>0.11.0</agent-judge.version>
         <spring-ai-agent-utils.version>0.5.0</spring-ai-agent-utils.version>
         <journal-core.version>1.0.1</journal-core.version>
         <jacoco.version>0.8.12</jacoco.version>
@@ -145,7 +145,7 @@
 
             <!-- Agent Judge Framework -->
             <dependency>
-                <groupId>org.springaicommunity</groupId>
+                <groupId>io.github.markpollack</groupId>
                 <artifactId>agent-judge-core</artifactId>
                 <version>${agent-judge.version}</version>
             </dependency>

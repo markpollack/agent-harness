@@ -23,8 +23,6 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.junit.jupiter.api.Test;
-import org.springaicommunity.agent.tools.AskUserQuestionTool.Question;
-import org.springaicommunity.agent.tools.AskUserQuestionTool.Question.Option;
 
 class AgentCallbackTest {
 
@@ -48,7 +46,7 @@ class AgentCallbackTest {
 
 		List<Question> questions = List.of(
 			new Question("Which option?", "Choice",
-				List.of(new Option("A", "First option"), new Option("B", "Second option")),
+				List.of(new Question.Option("A", "First option"), new Question.Option("B", "Second option")),
 				false)
 		);
 
@@ -124,8 +122,8 @@ class AgentCallbackTest {
 
 		List<Question> questions = List.of(
 			new Question("Which database?", "Database",
-				List.of(new Option("PostgreSQL", "Relational DB"),
-					new Option("MongoDB", "Document DB")),
+				List.of(new Question.Option("PostgreSQL", "Relational DB"),
+					new Question.Option("MongoDB", "Document DB")),
 				false)
 		);
 

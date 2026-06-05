@@ -18,9 +18,9 @@ package io.github.markpollack.workflow.patterns.judge;
 import io.github.markpollack.workflow.core.TerminationReason;
 import io.github.markpollack.workflow.core.LoopState;
 import io.github.markpollack.workflow.strategy.TerminationStrategy;
-import org.springaicommunity.judge.jury.Jury;
-import org.springaicommunity.judge.jury.Verdict;
-import org.springaicommunity.judge.score.Scores;
+import io.github.markpollack.judge.jury.Jury;
+import io.github.markpollack.judge.jury.Verdict;
+import io.github.markpollack.judge.score.Scores;
 
 import java.nio.file.Path;
 import java.util.Map;

@@ -1,16 +1,16 @@
 package io.github.markpollack.workflow.flows.workflow;
 
 import io.github.markpollack.workflow.core.AgentContext;
-import org.springaicommunity.judge.jury.Jury;
-import org.springaicommunity.judge.jury.Verdict;
-import org.springaicommunity.judge.score.NumericalScore;
-import org.springaicommunity.judge.score.Score;
+import io.github.markpollack.judge.jury.Jury;
+import io.github.markpollack.judge.jury.Verdict;
+import io.github.markpollack.judge.score.NumericalScore;
+import io.github.markpollack.judge.score.Score;
 
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
 
-import org.springaicommunity.judge.context.JudgmentContext;
+import io.github.markpollack.judge.context.JudgmentContext;
 
 /**
  * Three-tier quality gate: PASS if score >= highThreshold, ESCALATE if >= lowThreshold, FAIL otherwise.
