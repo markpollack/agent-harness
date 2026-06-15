@@ -36,6 +36,7 @@ import org.springframework.ai.chat.metadata.Usage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
+import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.tool.ToolCallback;
 
@@ -67,6 +68,9 @@ class TurnLimitedLoopTest {
 
     @BeforeEach
     void setUp() {
+        // Spring AI 2.0 GA derives request options via chatModel.getOptions().mutate();
+        // the mock returns null by default, so provide empty options.
+        given(chatModel.getOptions()).willReturn(ChatOptions.builder().build());
         chatClient = ChatClient.builder(chatModel).build();
         config = TurnLimitedConfig.builder()
                 .maxTurns(10)

@@ -169,9 +169,9 @@ public class AgentLoop {
 
         if (sessionMemory != null) {
             var memoryAdvisor = MessageChatMemoryAdvisor.builder(sessionMemory)
-                    .conversationId(conversationId)
                     .build();
-            chatClientBuilder.defaultAdvisors(memoryAdvisor);
+            chatClientBuilder.defaultAdvisors(memoryAdvisor)
+                    .defaultAdvisors(a -> a.param(ChatMemory.CONVERSATION_ID, conversationId));
         }
 
         this.chatClient = chatClientBuilder.build();
@@ -256,7 +256,12 @@ public class AgentLoop {
      * @return Agent result
      */
     public Result chat(String message, AgentCallback callback) {
-        // Note: onThinking is called by CallbackLoopListener.onTurnStarted()
+        // Emit the first onThinking explicitly: Spring AI 2.0 GA's tool-loop does not invoke the
+        // per-turn advisor hook (onTurnStarted) for a no-tool response, so it would otherwise be
+        // missed. Subsequent tool-execution turns still signal via CallbackLoopListener.onTurnStarted().
+        if (callback != null) {
+            callback.onThinking();
+        }
         Result result = run(message);
         if (callback != null) {
             callback.onComplete();
@@ -444,6 +449,9 @@ public class AgentLoop {
 
         @Override
         public void onTurnStarted(String runId, int turn) {
+            // Fires for each tool-execution turn (turn 2+). The first "thinking" signal is
+            // emitted by chat() because Spring AI 2.0 GA's tool-loop does not invoke this hook
+            // for a single no-tool response.
             callback.onThinking();
         }
 

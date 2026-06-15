@@ -85,7 +85,7 @@ public class AgentLoopAdvisor extends ToolCallAdvisor {
     private final ThreadLocal<String> userMessage = new ThreadLocal<>();
 
     protected AgentLoopAdvisor(Builder builder) {
-        super(builder.toolCallingManager, builder.advisorOrder, true);
+        super(builder.toolCallingManager, builder.getToolExecutionEligibilityChecker(), builder.advisorOrder, true);
         this.config = new AgentLoopConfig(
                 builder.maxTurns,
                 builder.timeout,

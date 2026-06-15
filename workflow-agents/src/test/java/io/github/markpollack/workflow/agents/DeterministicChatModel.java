@@ -21,6 +21,7 @@ import org.springframework.ai.chat.metadata.Usage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
+import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.chat.prompt.Prompt;
 
 import java.util.Iterator;
@@ -87,6 +88,12 @@ public class DeterministicChatModel implements ChatModel {
                 .generations(List.of(generation))
                 .metadata(metadata)
                 .build();
+    }
+
+    @Override
+    public ChatOptions getOptions() {
+        // Spring AI 2.0 GA derives request options via getOptions().mutate(); must be non-null.
+        return ChatOptions.builder().build();
     }
 
     /**
