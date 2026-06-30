@@ -4,13 +4,21 @@ import io.github.markpollack.workflow.core.AgentContext;
 import io.github.markpollack.workflow.flows.Step;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import io.github.markpollack.judge.Judge;
+import io.github.markpollack.judge.context.JudgmentContext;
+import io.github.markpollack.judge.jury.ConsensusStrategy;
 import io.github.markpollack.judge.jury.Jury;
+import io.github.markpollack.judge.jury.SimpleJury;
 import io.github.markpollack.judge.jury.Verdict;
 import io.github.markpollack.judge.result.Judgment;
+import io.github.markpollack.judge.result.JudgmentStatus;
 import io.github.markpollack.judge.score.NumericalScore;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BiFunction;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -212,7 +220,7 @@ class GateTest {
         @Test
         void judgeGateShouldPassWhenScoreAboveThreshold() {
             Jury jury = mockJuryReturningScore(0.9);
-            JudgeGate<Object> gate = new JudgeGate<>(jury, 0.8);
+            JudgeGate<Object> gate = new JudgeGate<>(jury, 0.8, JudgeGate.defaultContextMapper("Gate evaluation"));
 
             String result = Workflow.<String, String>define("judge-pass")
                     .gate(gate)
@@ -227,7 +235,7 @@ class GateTest {
         @Test
         void judgeGateShouldFailWhenScoreBelowThreshold() {
             Jury jury = mockJuryReturningScore(0.5);
-            JudgeGate<Object> gate = new JudgeGate<>(jury, 0.8);
+            JudgeGate<Object> gate = new JudgeGate<>(jury, 0.8, JudgeGate.defaultContextMapper("Gate evaluation"));
 
             String result = Workflow.<String, String>define("judge-fail")
                     .gate(gate)
@@ -242,7 +250,7 @@ class GateTest {
         @Test
         void judgeGateFailShouldWriteVerdictToContext() {
             Jury jury = mockJuryReturningScore(0.3);
-            JudgeGate<Object> gate = new JudgeGate<>(jury, 0.8);
+            JudgeGate<Object> gate = new JudgeGate<>(jury, 0.8, JudgeGate.defaultContextMapper("Gate evaluation"));
             AtomicReference<Object> capturedVerdict = new AtomicReference<>();
 
             Workflow.<String, String>define("verdict-feedback")
@@ -270,7 +278,7 @@ class GateTest {
         @Test
         void tieredGateShouldPassOnHighScore() {
             Jury jury = mockJuryReturningScore(0.95);
-            TieredGate<Object> gate = new TieredGate<>(jury, 0.9, 0.6);
+            TieredGate<Object> gate = new TieredGate<>(jury, 0.9, 0.6, JudgeGate.defaultContextMapper("Tiered gate evaluation"));
 
             GateDecision decision = gate.evaluate(AgentContext.create(), "output");
             assertThat(decision).isEqualTo(GateDecision.PASS);
@@ -279,7 +287,7 @@ class GateTest {
         @Test
         void tieredGateShouldEscalateOnBorderlineScore() {
             Jury jury = mockJuryReturningScore(0.75);
-            TieredGate<Object> gate = new TieredGate<>(jury, 0.9, 0.6);
+            TieredGate<Object> gate = new TieredGate<>(jury, 0.9, 0.6, JudgeGate.defaultContextMapper("Tiered gate evaluation"));
 
             GateDecision decision = gate.evaluate(AgentContext.create(), "output");
             assertThat(decision).isEqualTo(GateDecision.ESCALATE);
@@ -288,7 +296,7 @@ class GateTest {
         @Test
         void tieredGateShouldFailOnLowScore() {
             Jury jury = mockJuryReturningScore(0.3);
-            TieredGate<Object> gate = new TieredGate<>(jury, 0.9, 0.6);
+            TieredGate<Object> gate = new TieredGate<>(jury, 0.9, 0.6, JudgeGate.defaultContextMapper("Tiered gate evaluation"));
 
             GateDecision decision = gate.evaluate(AgentContext.create(), "output");
             assertThat(decision).isEqualTo(GateDecision.FAIL);
@@ -305,7 +313,7 @@ class GateTest {
         @Test
         void reflectorShouldWriteFeedbackToContextOnFail() {
             Jury jury = mockJuryReturningScore(0.3);
-            JudgeGate<Object> gate = new JudgeGate<>(jury, 0.8);
+            JudgeGate<Object> gate = new JudgeGate<>(jury, 0.8, JudgeGate.defaultContextMapper("Gate evaluation"));
             AtomicReference<String> capturedReflection = new AtomicReference<>();
 
             Step<?, ?> reflector = Step.named("reflector",
@@ -324,6 +332,85 @@ class GateTest {
                     .run("output");
 
             assertThat(capturedReflection.get()).isEqualTo("Improve: score was too low");
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Context mapper — real (non-mocked) jury whose judge reads metadata
+    // -------------------------------------------------------------------------
+
+    @Nested
+    class ContextMapperTests {
+
+        // Lifts the typed gate output into JudgmentContext metadata so a real metadata-reading
+        // judge can be fed by JudgeGate — impossible before the mapper became a required gate input.
+        private final BiFunction<AgentContext, Boolean, JudgmentContext> buildPassedMapper =
+                (ctx, buildPassed) -> JudgmentContext.builder()
+                        .goal("build health")
+                        .metadata("buildPassed", buildPassed)
+                        .executionTime(Duration.ZERO)
+                        .startedAt(Instant.now())
+                        .build();
+
+        @Test
+        void judgeGateWithMapperShouldPassWhenMetadataReadingJudgePasses() {
+            JudgeGate<Boolean> gate = new JudgeGate<>(metadataReadingJury(), 0.5, buildPassedMapper);
+
+            String result = Workflow.<Boolean, String>define("mapper-pass")
+                    .gate(gate)
+                        .onPass(Step.named("commit", (ctx, in) -> "committed"))
+                        .onFail(Step.named("retry", (ctx, in) -> "retried"))
+                    .end()
+                    .run(true);
+
+            assertThat(result).isEqualTo("committed");
+        }
+
+        @Test
+        void judgeGateWithMapperShouldFailWhenMetadataReadingJudgeFails() {
+            JudgeGate<Boolean> gate = new JudgeGate<>(metadataReadingJury(), 0.5, buildPassedMapper);
+
+            String result = Workflow.<Boolean, String>define("mapper-fail")
+                    .gate(gate)
+                        .onPass(Step.named("commit", (ctx, in) -> "committed"))
+                        .onFail(Step.named("retry", (ctx, in) -> "retried"))
+                    .end()
+                    .run(false);
+
+            assertThat(result).isEqualTo("retried");
+        }
+
+        @Test
+        void judgeGateShouldRecordVerdictTrailOnPass() {
+            JudgeGate<Boolean> gate = new JudgeGate<>(metadataReadingJury(), 0.5, buildPassedMapper);
+            AtomicReference<Object> capturedTrail = new AtomicReference<>();
+
+            Workflow.<Boolean, String>define("verdict-trail")
+                    .gate(gate)
+                        .onPass(Step.named("commit", (ctx, in) -> {
+                            capturedTrail.set(ctx.get(AgentContext.JUDGE_VERDICTS).orElse(null));
+                            return "committed";
+                        }))
+                        .onFail(Step.named("retry", (ctx, in) -> "retried"))
+                    .end()
+                    .run(true);
+
+            // Recorded even though the gate PASSED — the old code only wrote a verdict on FAIL.
+            assertThat(capturedTrail.get()).isInstanceOf(List.class);
+            assertThat((List<?>) capturedTrail.get()).hasSize(1);
+        }
+
+        // A real SimpleJury (not Mockito) whose single judge reads metadata("buildPassed").
+        private Jury metadataReadingJury() {
+            Judge buildPassedJudge = context -> {
+                boolean passed = Boolean.TRUE.equals(context.metadata().get("buildPassed"));
+                return Judgment.builder()
+                        .score(new NumericalScore(passed ? 1.0 : 0.0, 0.0, 1.0))
+                        .status(passed ? JudgmentStatus.PASS : JudgmentStatus.FAIL)
+                        .reasoning("buildPassed=" + passed)
+                        .build();
+            };
+            return SimpleJury.builder().votingStrategy(new ConsensusStrategy()).judge(buildPassedJudge).build();
         }
     }
 
