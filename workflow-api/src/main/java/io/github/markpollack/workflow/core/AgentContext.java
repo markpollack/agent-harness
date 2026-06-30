@@ -1,6 +1,7 @@
 package io.github.markpollack.workflow.core;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Objects;
@@ -53,6 +54,17 @@ public final class AgentContext {
     /** Judge verdict from a failed JudgeGate evaluation. The retry step reads this for feedback. */
     public static final ContextKey<Object> JUDGE_VERDICT =
             ContextKey.of("judgeVerdict", Object.class);
+
+    /**
+     * Accumulating trail of every gate verdict in the run, in evaluation order — recorded on every
+     * decision (PASS and FAIL), unlike the singular {@link #JUDGE_VERDICT}. Downstream steps (reports,
+     * audits) read this to render the full judge cascade without a bespoke per-consumer gate wrapper.
+     * Elements are {@code agent-judge} {@code Verdict} objects, held as {@code Object} so this module
+     * stays judge-free.
+     */
+    @SuppressWarnings("unchecked")
+    public static final ContextKey<List<Object>> JUDGE_VERDICTS =
+            (ContextKey<List<Object>>) (ContextKey<?>) ContextKey.of("judgeVerdicts", List.class);
 
     /** Reflector-generated feedback text from a failed JudgeGate evaluation. */
     public static final ContextKey<String> JUDGE_REFLECTION =

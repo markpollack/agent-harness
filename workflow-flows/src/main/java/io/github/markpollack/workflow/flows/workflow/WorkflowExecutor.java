@@ -230,24 +230,31 @@ public class WorkflowExecutor {
                     GateDecision decision = gate.evaluate(ctx, currentValue);
                     ctx = gate.updateContext(ctx, currentValue, decision);
 
-                    // Verdict feedback: write Verdict to context on FAIL
-                    if (decision == GateDecision.FAIL || decision == GateDecision.ESCALATE) {
-                        Object verdict = null;
-                        if (gate instanceof JudgeGate<?> jg) verdict = jg.lastVerdict();
-                        else if (gate instanceof TieredGate<?> tg) verdict = tg.lastVerdict();
-                        if (verdict != null) {
+                    // Verdict trail: record every judged gate's verdict (PASS and FAIL) to a standard
+                    // accumulating key, so downstream steps (reports, audits) read the full cascade
+                    // without a bespoke per-consumer gate wrapper.
+                    Object verdict = null;
+                    if (gate instanceof JudgeGate<?> jg) verdict = jg.lastVerdict();
+                    else if (gate instanceof TieredGate<?> tg) verdict = tg.lastVerdict();
+                    if (verdict != null) {
+                        List<Object> verdicts = new ArrayList<>(ctx.get(AgentContext.JUDGE_VERDICTS).orElse(List.of()));
+                        verdicts.add(verdict);
+                        ctx = ctx.mutate().with(AgentContext.JUDGE_VERDICTS, List.copyOf(verdicts)).build();
+                    }
+
+                    // Verdict feedback: write the singular Verdict + run the reflector on FAIL/ESCALATE
+                    if ((decision == GateDecision.FAIL || decision == GateDecision.ESCALATE) && verdict != null) {
+                        ctx = ctx.mutate()
+                                .with(AgentContext.JUDGE_VERDICT, verdict)
+                                .build();
+                        // Run reflector if configured
+                        if (gateNode.reflector() != null) {
+                            @SuppressWarnings("unchecked")
+                            Step<Object, Object> reflector = (Step<Object, Object>) gateNode.reflector();
+                            Object reflection = stepRunner.execute(reflector, ctx, verdict);
                             ctx = ctx.mutate()
-                                    .with(AgentContext.JUDGE_VERDICT, verdict)
+                                    .with(AgentContext.JUDGE_REFLECTION, reflection.toString())
                                     .build();
-                            // Run reflector if configured
-                            if (gateNode.reflector() != null) {
-                                @SuppressWarnings("unchecked")
-                                Step<Object, Object> reflector = (Step<Object, Object>) gateNode.reflector();
-                                Object reflection = stepRunner.execute(reflector, ctx, verdict);
-                                ctx = ctx.mutate()
-                                        .with(AgentContext.JUDGE_REFLECTION, reflection.toString())
-                                        .build();
-                            }
                         }
                     }
 
