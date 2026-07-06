@@ -1,0 +1,105 @@
+{
+  "apiVersion": "workflow/v2alpha",
+  "kind": "Workflow",
+  "metadata": {
+    "name": "pr-review",
+    "version": "1.0.0"
+  },
+  "constants": {
+    "approval_threshold": 0.8
+  },
+  "operations": {
+    "fetch-pr-diff": {
+      "ref": "java:github.fetch_pr_diff:v1"
+    },
+    "analyze-diff": {
+      "ref": "python:review.analyze_diff:v2"
+    },
+    "route-review": {
+      "ref": "java:review.route:v1"
+    },
+    "post-review": {
+      "ref": "typescript:github.post_review:v1"
+    }
+  },
+  "nodes": [
+    {
+      "id": "fetch_diff",
+      "kind": "task",
+      "operation": "fetch-pr-diff",
+      "input": {
+        "url": { "from": "$input.url" }
+      },
+      "contextWrites": {
+        "pr.diff": { "from": "$node.fetch_diff.output" }
+      }
+    },
+    {
+      "id": "analyze_diff",
+      "kind": "task",
+      "operation": "analyze-diff",
+      "input": {
+        "diff": { "from": "$context.pr.diff" }
+      }
+    },
+    {
+      "id": "route",
+      "kind": "decision",
+      "operation": "route-review",
+      "input": {
+        "analysis": { "from": "$node.analyze_diff.output" },
+        "threshold": { "from": "$const.approval_threshold" }
+      },
+      "outcomes": ["post", "fail"]
+    },
+    {
+      "id": "post_comment",
+      "kind": "task",
+      "operation": "post-review",
+      "input": {
+        "review": { "from": "$node.analyze_diff.output" }
+      }
+    },
+    {
+      "id": "done",
+      "kind": "terminate",
+      "status": "completed",
+      "result": {
+        "from": "$node.post_comment.output"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "fetch_diff",
+      "to": "analyze_diff",
+      "when": { "kind": "always" }
+    },
+    {
+      "from": "analyze_diff",
+      "to": "route",
+      "when": { "kind": "always" }
+    },
+    {
+      "from": "route",
+      "to": "post_comment",
+      "when": { "kind": "decisionResult", "value": "post" }
+    },
+    {
+      "from": "route",
+      "to": "done",
+      "when": { "kind": "decisionResult", "value": "fail" }
+    },
+    {
+      "from": "post_comment",
+      "to": "done",
+      "when": { "kind": "always" }
+    }
+  ],
+  "entrypoint": "fetch_diff",
+  "outputs": {
+    "result": {
+      "from": "$node.post_comment.output"
+    }
+  }
+}
