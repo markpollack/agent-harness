@@ -39,6 +39,8 @@
     <modules>
         <module>workflow-api</module>
         <module>workflow-core</module>
+        <module>workflow-spec</module>
+        <module>workflow-engine</module>
         <module>workflow-tools</module>
         <module>workflow-agents</module>
         <module>workflow-examples</module>
@@ -67,6 +69,7 @@
         <spring-ai-agent-utils.version>0.5.0</spring-ai-agent-utils.version>
         <journal-core.version>1.4.0</journal-core.version>
         <jacoco.version>0.8.12</jacoco.version>
+        <json-schema-validator.version>1.5.7</json-schema-validator.version>
 
         <!-- Release plugin versions -->
         <maven-source-plugin.version>3.3.0</maven-source-plugin.version>
@@ -102,6 +105,16 @@
             <dependency>
                 <groupId>io.github.markpollack</groupId>
                 <artifactId>workflow-core</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.markpollack</groupId>
+                <artifactId>workflow-spec</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.markpollack</groupId>
+                <artifactId>workflow-engine</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
@@ -210,6 +223,13 @@
                 <artifactId>assertj-core</artifactId>
                 <version>${assertj.version}</version>
                 <scope>test</scope>
+            </dependency>
+
+            <!-- JSON Schema validation (v2 WorkflowSpec wire-shape phase; Jackson 2.x based) -->
+            <dependency>
+                <groupId>com.networknt</groupId>
+                <artifactId>json-schema-validator</artifactId>
+                <version>${json-schema-validator.version}</version>
             </dependency>
 
             <!-- Micrometer Observation for tool call observability -->

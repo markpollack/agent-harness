@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/workflow-ir/v2alpha/schema",
+  "$comment": "PLACEHOLDER (core roadmap Step 1.1). The normative schema is promoted here at Step 1.2 from the reviewed draft, reconciled against WORKFLOW-IR-V2-ALPHA-SPEC.md, with additionalProperties:false enforcement (DD-19), the policies wire shape, and a real $id. Do not consume this placeholder.",
+  "type": "object"
+}

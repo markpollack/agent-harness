@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>io.github.markpollack</groupId>
+        <artifactId>agent-workflow-parent</artifactId>
+        <version>0.11.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>workflow-engine</artifactId>
+    <name>Workflow Engine</name>
+    <description>V2 workflow interpreter: operation registry, event sink, retry engine, checkpoint SPI</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>io.github.markpollack</groupId>
+            <artifactId>workflow-spec</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.github.markpollack</groupId>
+            <artifactId>workflow-api</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+        </dependency>
+
+        <!-- Test -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>
