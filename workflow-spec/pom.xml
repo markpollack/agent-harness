@@ -27,6 +27,12 @@
             <artifactId>json-schema-validator</artifactId>
         </dependency>
 
+        <!-- RFC 8785 canonical form (DD-15) -->
+        <dependency>
+            <groupId>io.github.erdtman</groupId>
+            <artifactId>java-json-canonicalization</artifactId>
+        </dependency>
+
         <!-- Test -->
         <dependency>
             <groupId>org.junit.jupiter</groupId>

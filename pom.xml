@@ -70,6 +70,7 @@
         <journal-core.version>1.4.0</journal-core.version>
         <jacoco.version>0.8.12</jacoco.version>
         <json-schema-validator.version>1.5.7</json-schema-validator.version>
+        <java-json-canonicalization.version>1.1</java-json-canonicalization.version>
 
         <!-- Release plugin versions -->
         <maven-source-plugin.version>3.3.0</maven-source-plugin.version>
@@ -230,6 +231,13 @@
                 <groupId>com.networknt</groupId>
                 <artifactId>json-schema-validator</artifactId>
                 <version>${json-schema-validator.version}</version>
+            </dependency>
+
+            <!-- RFC 8785 JSON Canonicalization Scheme (v2 canonical form, DESIGN DD-15) -->
+            <dependency>
+                <groupId>io.github.erdtman</groupId>
+                <artifactId>java-json-canonicalization</artifactId>
+                <version>${java-json-canonicalization.version}</version>
             </dependency>
 
             <!-- Micrometer Observation for tool call observability -->
