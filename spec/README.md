@@ -5,13 +5,24 @@ contract (DESIGN DD-9). No language owns it: the Java model, the Python SDK, and
 TypeScript SDK are all conforming consumers. Java embeds it via a build-time resource
 copy; the SDK test suites read it directly and vendor the schema at packaging time.
 
-**Status: PRE-FREEZE.** The authoring contract freezes at core roadmap Step 1.6; the
-event contract freezes at Step 2.5. Until the corresponding freeze is declared in this
-file, artifacts here may change without cross-SDK coordination. After a freeze, **any
-change to the schema, the fixture corpus, the semantic rule catalog, or (post-2.5) the
-event contract is a cross-SDK change**: it must update this kit first and may not merge
-until every SDK's test suite (or, before an SDK exists, its roadmap document) is updated
-in the same change.
+**Status: AUTHORING CONTRACT FROZEN (Step 1.6, 2026-07-06).** The wire format
+(`workflow-v2alpha.schema.json`), the semantic rule catalog and its error codes
+(`rules/semantic-rules.md` SEM-01…SEM-14 + `SCHEMA_INVALID`), the Canonical JSON Form
+rules below, and the fixture corpus are frozen for the v2-alpha cycle. The event
+contract (`events/`) remains pre-freeze until Step 2.5.
+
+**Change control after the freeze**: any change to the schema, the fixture corpus, the
+semantic rule catalog, or (post-2.5) the event contract is a **cross-SDK change** — it
+must update this kit first and may not merge until every SDK's test suite (or, before an
+SDK exists, its roadmap document) is updated in the same change.
+
+**Evolution rules within `workflow/v2alpha`** (post-freeze changes that are ever
+acceptable are additive only): new *optional* fields and new enum values may be added
+with fixtures in the same change; field renames/removals and semantics changes require a
+new `apiVersion`. Retired names are **reserved** — never reuse a removed field name or
+error code with different meaning. Extension-point graduation follows DD-19: annotations
+or attributes that become load-bearing are promoted to schema fields in the next
+contract revision, never depended on in the bag.
 
 ## Layout
 
@@ -98,5 +109,8 @@ suites must do the same.
 ## Freeze declarations
 
 - **Authoring contract** (schema, semantic rules, canonical form, error codes):
-  _not yet frozen — declared here at Step 1.6._
+  **FROZEN 2026-07-06** (core Step 1.6). Reconciled artifacts: alpha spec doc
+  (`plans/v2/WORKFLOW-IR-V2-ALPHA-SPEC.md`, 2026-07-06 revision), schema, Java model,
+  fixture corpus — zero known discrepancies at freeze time; the corpus test suite is
+  the executable proof.
 - **Event contract** (`events/`): _not yet frozen — declared here at Step 2.5._

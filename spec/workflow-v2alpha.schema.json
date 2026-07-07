@@ -258,7 +258,8 @@
       "properties": {
         "id": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_-]+$"
         },
         "kind": {
           "type": "string",
@@ -296,7 +297,8 @@
           "properties": {
             "id": {
               "type": "string",
-              "minLength": 1
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_-]+$"
             },
             "kind": {
               "const": "task"
@@ -345,7 +347,8 @@
           "properties": {
             "id": {
               "type": "string",
-              "minLength": 1
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_-]+$"
             },
             "kind": {
               "const": "decision"
@@ -399,7 +402,8 @@
           "properties": {
             "id": {
               "type": "string",
-              "minLength": 1
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_-]+$"
             },
             "kind": {
               "const": "terminate"
@@ -537,8 +541,8 @@
         "from": {
           "type": "string",
           "minLength": 1,
-          "pattern": "^\\$(input|context|const|node)(\\.|$)",
-          "$comment": "Loose source-prefix check only; the full binding path grammar is frozen in the alpha spec at Step 1.6 and enforced semantically."
+          "pattern": "^\\$(input(\\.[A-Za-z0-9_-]+)?|context\\..+|const\\..+|node\\.[A-Za-z0-9_-]+\\.(output|decision))$",
+          "$comment": "The frozen v2-alpha binding path grammar (alpha spec section 12): bare $input or one top-level key; $context./$const. followed by a literal flat key (may contain dots); $node.<id>.output|.decision only - no attribute paths in alpha."
         }
       }
     },
