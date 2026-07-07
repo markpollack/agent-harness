@@ -14,11 +14,11 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Default reader: parse → JSON Schema validation (phase one) → bind to the sealed model.
- *
- * <p>Phase two (the semantic validator, stable per-rule error codes) is wired here in
- * roadmap Step 1.4; until then this reader guarantees wire-shape validity only.
- * Schema-phase failures carry the stable code {@link #SCHEMA_INVALID}.
+ * Default reader: parse → JSON Schema validation (phase one) → bind to the sealed model
+ * → semantic validation (phase two). A returned {@link WorkflowSpec} has passed both
+ * phases and is by construction valid. Schema-phase failures carry the stable code
+ * {@link #SCHEMA_INVALID}; semantic failures carry the per-rule codes from
+ * {@code spec/rules/semantic-rules.md}.
  */
 public final class DefaultWorkflowSpecReader implements WorkflowSpecReader {
 
@@ -28,6 +28,7 @@ public final class DefaultWorkflowSpecReader implements WorkflowSpecReader {
     private static final String SCHEMA_RESOURCE = "/spec/workflow-v2alpha.schema.json";
 
     private final JsonSchema schema;
+    private final WorkflowSpecValidator semanticValidator = new WorkflowSpecValidator();
 
     public DefaultWorkflowSpecReader() {
         try (InputStream schemaStream = DefaultWorkflowSpecReader.class.getResourceAsStream(SCHEMA_RESOURCE)) {
@@ -63,12 +64,19 @@ public final class DefaultWorkflowSpecReader implements WorkflowSpecReader {
             throw new WorkflowSpecValidationException(List.copyOf(errors));
         }
 
+        WorkflowSpec spec;
         try {
-            return WorkflowSpecJson.mapper().treeToValue(tree, WorkflowSpec.class);
+            spec = WorkflowSpecJson.mapper().treeToValue(tree, WorkflowSpec.class);
         } catch (IOException | IllegalArgumentException e) {
             // A schema-valid document that fails model binding is a reader defect, not
             // an input defect - surface it loudly rather than as a validation error.
             throw new IllegalStateException("schema-valid document failed model binding", e);
         }
+
+        List<ValidationError> semanticErrors = semanticValidator.validate(spec);
+        if (!semanticErrors.isEmpty()) {
+            throw new WorkflowSpecValidationException(semanticErrors);
+        }
+        return spec;
     }
 }

@@ -77,6 +77,49 @@ class WorkflowSpecReaderValidationTest {
     }
 
     @Test
+    void semanticErrorsSurfaceThroughTheReaderWithStableCodes() {
+        var ex = readInvalid("""
+                {
+                  "apiVersion": "workflow/v2alpha", "kind": "Workflow",
+                  "metadata": {"name": "bad"},
+                  "operations": {"op": {"ref": "java:x:v1"}},
+                  "nodes": [{"id": "t", "kind": "task", "operation": "op"},
+                            {"id": "end", "kind": "terminate", "status": "completed"}],
+                  "edges": [{"from": "t", "to": "ghost", "when": {"kind": "always"}},
+                            {"from": "t", "to": "end", "when": {"kind": "always"}}],
+                  "entrypoint": "t"
+                }
+                """);
+        assertThat(ex.errors()).anySatisfy(e -> {
+            assertThat(e.code()).isEqualTo(WorkflowSpecValidator.EDGE_UNKNOWN_NODE);
+            assertThat(e.path()).isEqualTo("edges[from=t,to=ghost].to");
+        });
+    }
+
+    @Test
+    void duplicateJsonKeysAreRejectedAtParseNeverLastWins() {
+        // SEM-07's Java-side enforcement: strict duplicate-key detection at parse.
+        var ex = readInvalid("""
+                {
+                  "apiVersion": "workflow/v2alpha", "kind": "Workflow",
+                  "metadata": {"name": "bad"},
+                  "operations": {"op": {"ref": "java:x:v1"}},
+                  "nodes": [{"id": "t", "kind": "task", "operation": "op",
+                             "contextWrites": {"k": {"from": "$input.a"}, "k": {"from": "$input.b"}}},
+                            {"id": "end", "kind": "terminate", "status": "completed"}],
+                  "edges": [{"from": "t", "to": "end", "when": {"kind": "always"}}],
+                  "entrypoint": "t"
+                }
+                """);
+        assertThat(ex.errors()).hasSize(1)
+                .first()
+                .satisfies(e -> {
+                    assertThat(e.code()).isEqualTo(DefaultWorkflowSpecReader.SCHEMA_INVALID);
+                    assertThat(e.message()).contains("Duplicate field");
+                });
+    }
+
+    @Test
     void allSchemaErrorsAreCollectedNotJustTheFirst() {
         var ex = readInvalid("""
                 {
