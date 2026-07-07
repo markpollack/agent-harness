@@ -64,6 +64,25 @@ public final class Workflow<I, O> implements Step<I, O> {
         return graph;
     }
 
+    /**
+     * Emits this workflow as a v2-alpha {@code WorkflowSpec} with auto-derived ids,
+     * refs, and bindings (DD-20 opt-in, DD-21 lambdas swallowed as-is). See
+     * {@link io.github.markpollack.workflow.flows.spec.SpecEmitter} for the derivation
+     * rules and the portability ladder. Plain {@code .run(input)} is untouched by this.
+     *
+     * @throws io.github.markpollack.workflow.flows.spec.SpecEmissionException if the
+     *         workflow uses a primitive not expressible in v2-alpha
+     */
+    public io.github.markpollack.workflow.flows.spec.WorkflowSpecEmission toSpec() {
+        return toSpec(io.github.markpollack.workflow.flows.spec.SpecEmitterOptions.defaults());
+    }
+
+    /** Emits this workflow as a v2-alpha {@code WorkflowSpec} with explicit customization. */
+    public io.github.markpollack.workflow.flows.spec.WorkflowSpecEmission toSpec(
+            io.github.markpollack.workflow.flows.spec.SpecEmitterOptions options) {
+        return io.github.markpollack.workflow.flows.spec.SpecEmitter.emit(graph, options);
+    }
+
     // -------------------------------------------------------------------------
     // Entry points
     // -------------------------------------------------------------------------
@@ -375,6 +394,17 @@ public final class Workflow<I, O> implements Step<I, O> {
 
         public Workflow<I, O> build() {
             return new Workflow<>(compile(), executor);
+        }
+
+        /** Compiles and emits as a v2-alpha spec — see {@link Workflow#toSpec()}. */
+        public io.github.markpollack.workflow.flows.spec.WorkflowSpecEmission toSpec() {
+            return toSpec(io.github.markpollack.workflow.flows.spec.SpecEmitterOptions.defaults());
+        }
+
+        /** Compiles and emits as a v2-alpha spec with explicit customization. */
+        public io.github.markpollack.workflow.flows.spec.WorkflowSpecEmission toSpec(
+                io.github.markpollack.workflow.flows.spec.SpecEmitterOptions options) {
+            return io.github.markpollack.workflow.flows.spec.SpecEmitter.emit(compile(), options);
         }
 
         // -- Internal helpers --

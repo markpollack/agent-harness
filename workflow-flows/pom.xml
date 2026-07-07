@@ -33,6 +33,12 @@
             <artifactId>workflow-engine</artifactId>
         </dependency>
 
+        <!-- workflow-spec provides the v2 WorkflowSpec model for the .toSpec() emitter -->
+        <dependency>
+            <groupId>io.github.markpollack</groupId>
+            <artifactId>workflow-spec</artifactId>
+        </dependency>
+
         <!-- Spring AI ChatClient for ChatClientStep -->
         <dependency>
             <groupId>org.springframework.ai</groupId>
