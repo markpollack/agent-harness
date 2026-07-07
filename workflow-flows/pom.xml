@@ -27,6 +27,12 @@
             <artifactId>workflow-core</artifactId>
         </dependency>
 
+        <!-- workflow-engine provides the v2 OperationHandler seam for StepOperationHandler -->
+        <dependency>
+            <groupId>io.github.markpollack</groupId>
+            <artifactId>workflow-engine</artifactId>
+        </dependency>
+
         <!-- Spring AI ChatClient for ChatClientStep -->
         <dependency>
             <groupId>org.springframework.ai</groupId>
