@@ -39,8 +39,9 @@ public sealed interface OperationResult
 
     /**
      * The attempt is in the retryable family: {@code failure} or {@code timed_out}
-     * whose error envelope does not mark itself non-retryable (§7). Advisory input to
-     * the retry policy, never a command.
+     * whose error envelope does not mark itself non-retryable (§7 state families;
+     * §17's Retry Gate item 3 for the envelope flag). Advisory input to the retry
+     * policy, never a command.
      */
     default boolean retryable() {
         return switch (this) {

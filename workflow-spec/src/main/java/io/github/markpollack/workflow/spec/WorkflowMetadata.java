@@ -1,7 +1,6 @@
 package io.github.markpollack.workflow.spec;
 
 import java.util.Map;
-import java.util.Objects;
 
 /**
  * Workflow identity and classification metadata. {@code labels} and {@code annotations}
@@ -15,7 +14,7 @@ public record WorkflowMetadata(
         Map<String, String> annotations) {
 
     public WorkflowMetadata {
-        Objects.requireNonNull(name, "name");
+        name = SpecInvariants.requireNonBlank(name, "name");
         labels = labels == null ? null : Map.copyOf(labels);
         annotations = annotations == null ? null : Map.copyOf(annotations);
     }

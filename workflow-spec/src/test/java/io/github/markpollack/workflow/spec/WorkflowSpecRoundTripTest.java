@@ -40,7 +40,7 @@ class WorkflowSpecRoundTripTest {
         assertThat(spec.operations()).containsOnlyKeys(
                 "fetch-pr-diff", "analyze-diff", "route-review", "post-review");
         assertThat(spec.operations().get("analyze-diff").ref()).isEqualTo("python:review.analyze_diff:v2");
-        assertThat(spec.nodes()).hasSize(5);
+        assertThat(spec.nodes()).hasSize(6);
         assertThat(spec.edges()).hasSize(5);
         assertThat(spec.entrypoint()).isEqualTo("fetch_diff");
         assertThat(spec.constants().get("approval_threshold").doubleValue()).isEqualTo(0.8);

@@ -28,10 +28,14 @@
       "kind": "task",
       "operation": "fetch-pr-diff",
       "input": {
-        "url": { "from": "$input.url" }
+        "url": {
+          "from": "$input.url"
+        }
       },
       "contextWrites": {
-        "pr.diff": { "from": "$node.fetch_diff.output" }
+        "pr.diff": {
+          "from": "$node.fetch_diff.output"
+        }
       }
     },
     {
@@ -39,7 +43,9 @@
       "kind": "task",
       "operation": "analyze-diff",
       "input": {
-        "diff": { "from": "$context.pr.diff" }
+        "diff": {
+          "from": "$context.pr.diff"
+        }
       }
     },
     {
@@ -47,17 +53,26 @@
       "kind": "decision",
       "operation": "route-review",
       "input": {
-        "analysis": { "from": "$node.analyze_diff.output" },
-        "threshold": { "from": "$const.approval_threshold" }
+        "analysis": {
+          "from": "$node.analyze_diff.output"
+        },
+        "threshold": {
+          "from": "$const.approval_threshold"
+        }
       },
-      "outcomes": ["post", "fail"]
+      "outcomes": [
+        "post",
+        "fail"
+      ]
     },
     {
       "id": "post_comment",
       "kind": "task",
       "operation": "post-review",
       "input": {
-        "review": { "from": "$node.analyze_diff.output" }
+        "review": {
+          "from": "$node.analyze_diff.output"
+        }
       }
     },
     {
@@ -67,33 +82,53 @@
       "result": {
         "from": "$node.post_comment.output"
       }
+    },
+    {
+      "id": "rejected",
+      "kind": "terminate",
+      "status": "failed",
+      "result": {
+        "from": "$node.analyze_diff.output"
+      }
     }
   ],
   "edges": [
     {
       "from": "fetch_diff",
       "to": "analyze_diff",
-      "when": { "kind": "always" }
+      "when": {
+        "kind": "always"
+      }
     },
     {
       "from": "analyze_diff",
       "to": "route",
-      "when": { "kind": "always" }
+      "when": {
+        "kind": "always"
+      }
     },
     {
       "from": "route",
       "to": "post_comment",
-      "when": { "kind": "decisionResult", "value": "post" }
+      "when": {
+        "kind": "decisionResult",
+        "value": "post"
+      }
     },
     {
       "from": "route",
-      "to": "done",
-      "when": { "kind": "decisionResult", "value": "fail" }
+      "to": "rejected",
+      "when": {
+        "kind": "decisionResult",
+        "value": "fail"
+      }
     },
     {
       "from": "post_comment",
       "to": "done",
-      "when": { "kind": "always" }
+      "when": {
+        "kind": "always"
+      }
     }
   ],
   "entrypoint": "fetch_diff",

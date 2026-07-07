@@ -45,7 +45,7 @@ public record WorkflowSpec(
         Objects.requireNonNull(operations, "operations");
         Objects.requireNonNull(nodes, "nodes");
         Objects.requireNonNull(edges, "edges");
-        Objects.requireNonNull(entrypoint, "entrypoint");
+        entrypoint = SpecInvariants.requireNonBlank(entrypoint, "entrypoint");
         if (!API_VERSION.equals(apiVersion)) {
             throw new IllegalArgumentException("unsupported apiVersion: " + apiVersion);
         }

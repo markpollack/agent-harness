@@ -31,6 +31,17 @@
       }
     },
     {
+      "id": "route",
+      "kind": "decision",
+      "operation": "route",
+      "outcomes": [
+        "finish"
+      ],
+      "annotations": {
+        "editor.example.io/position": "{\"x\":220,\"y\":80}"
+      }
+    },
+    {
       "id": "done",
       "kind": "terminate",
       "status": "completed",
@@ -42,9 +53,17 @@
   "edges": [
     {
       "from": "styled",
-      "to": "done",
+      "to": "route",
       "when": {
         "kind": "always"
+      }
+    },
+    {
+      "from": "route",
+      "to": "done",
+      "when": {
+        "kind": "decisionResult",
+        "value": "finish"
       }
     }
   ],

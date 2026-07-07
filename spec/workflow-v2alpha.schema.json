@@ -168,7 +168,8 @@
         "maxAttempts": {
           "type": "integer",
           "minimum": 1,
-          "$comment": "Total attempts including the first (not retries-after-the-first)."
+          "$comment": "Total attempts including the first (not retries-after-the-first).",
+          "maximum": 2147483647
         },
         "backoff": {
           "$ref": "#/$defs/backoff"
@@ -200,11 +201,13 @@
         },
         "initialMillis": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 0,
+          "maximum": 9007199254740991
         },
         "maxMillis": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 0,
+          "maximum": 9007199254740991
         },
         "multiplier": {
           "type": "number",
@@ -223,7 +226,8 @@
         "perAttemptMillis": {
           "type": "integer",
           "minimum": 1,
-          "$comment": "Per-attempt budget; expiry normalizes the attempt to a timed_out OperationResult."
+          "$comment": "Per-attempt budget; expiry normalizes the attempt to a timed_out OperationResult.",
+          "maximum": 9007199254740991
         }
       }
     },
@@ -541,8 +545,8 @@
         "from": {
           "type": "string",
           "minLength": 1,
-          "pattern": "^\\$(input(\\.[A-Za-z0-9_-]+)?|context\\..+|const\\..+|node\\.[A-Za-z0-9_-]+\\.(output|decision))$",
-          "$comment": "The frozen v2-alpha binding path grammar (alpha spec section 12): bare $input or one top-level key; $context./$const. followed by a literal flat key (may contain dots); $node.<id>.output|.decision only - no attribute paths in alpha."
+          "pattern": "^\\$(input(\\.[A-Za-z0-9_-]+)?|context\\.[\\x21-\\x7E]+|const\\.[\\x21-\\x7E]+|node\\.[A-Za-z0-9_-]+\\.(output|decision))$",
+          "$comment": "The frozen v2-alpha binding path grammar (alpha spec section 12): bare $input or one top-level key; $context./$const. followed by a literal flat key of printable ASCII (ABNF VCHAR); $node.<id>.output|.decision only - no attribute paths in alpha."
         }
       }
     },

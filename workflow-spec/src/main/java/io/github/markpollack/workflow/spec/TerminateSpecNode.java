@@ -17,7 +17,7 @@ public record TerminateSpecNode(
         Binding result) implements WorkflowSpecNode {
 
     public TerminateSpecNode {
-        Objects.requireNonNull(id, "id");
+        id = SpecInvariants.requireNodeId(id);
         Objects.requireNonNull(status, "status");
         annotations = annotations == null ? null : Map.copyOf(annotations);
     }

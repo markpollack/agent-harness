@@ -20,12 +20,13 @@ public record DecisionSpecNode(
         PolicyBundle policies) implements WorkflowSpecNode {
 
     public DecisionSpecNode {
-        Objects.requireNonNull(id, "id");
-        Objects.requireNonNull(operation, "operation");
+        id = SpecInvariants.requireNodeId(id);
+        operation = SpecInvariants.requireNonBlank(operation, "operation");
         Objects.requireNonNull(outcomes, "outcomes");
         if (outcomes.isEmpty()) {
             throw new IllegalArgumentException("decision node '" + id + "' must declare at least one outcome");
         }
+        SpecInvariants.requireUnique(outcomes, "outcomes of decision '" + id + "'");
         annotations = annotations == null ? null : Map.copyOf(annotations);
         input = input == null ? null : Map.copyOf(input);
         outcomes = List.copyOf(outcomes);

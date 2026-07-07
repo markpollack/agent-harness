@@ -5,6 +5,10 @@ package io.github.markpollack.workflow.engine;
  * {@code WorkflowAborted} are added at the Step 2.5 event-contract freeze (queued);
  * retry exhaustion is expressed through routing + terminal semantics, not a dedicated
  * event type.
+ *
+ * <p><b>Wire names are NOT these constant names.</b> The §9 wire forms are CamelCase
+ * ({@code WorkflowStarted}, …); the JSON projection and its name mapping are pinned at
+ * the Step 2.5 event freeze — never serialize this enum with default naming.
  */
 public enum WorkflowEventType {
     WORKFLOW_STARTED,

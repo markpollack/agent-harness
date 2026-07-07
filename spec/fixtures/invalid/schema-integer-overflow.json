@@ -2,7 +2,7 @@
   "apiVersion": "workflow/v2alpha",
   "kind": "Workflow",
   "metadata": {
-    "name": "minimal-one-task",
+    "name": "schema-integer-overflow",
     "version": "1.0.0"
   },
   "operations": {
@@ -12,27 +12,29 @@
   },
   "nodes": [
     {
-      "id": "do",
+      "id": "a",
       "kind": "task",
       "operation": "work"
     },
     {
-      "id": "done",
+      "id": "end",
       "kind": "terminate",
-      "status": "completed",
-      "result": {
-        "from": "$node.do.output"
-      }
+      "status": "completed"
     }
   ],
   "edges": [
     {
-      "from": "do",
-      "to": "done",
+      "from": "a",
+      "to": "end",
       "when": {
         "kind": "always"
       }
     }
   ],
-  "entrypoint": "do"
+  "entrypoint": "a",
+  "policies": {
+    "retry": {
+      "maxAttempts": 99999999999999999999999999
+    }
+  }
 }

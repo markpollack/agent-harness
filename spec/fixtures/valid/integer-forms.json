@@ -1,0 +1,44 @@
+{
+  "apiVersion": "workflow/v2alpha",
+  "kind": "Workflow",
+  "metadata": {
+    "name": "integer-forms",
+    "version": "1.0.0"
+  },
+  "operations": {
+    "work": {
+      "ref": "java:test.work:v1"
+    }
+  },
+  "nodes": [
+    {
+      "id": "a",
+      "kind": "task",
+      "operation": "work",
+      "policies": {
+        "retry": {
+          "maxAttempts": 3.0,
+          "backoff": {
+            "strategy": "fixed",
+            "initialMillis": 1000.0
+          }
+        }
+      }
+    },
+    {
+      "id": "end",
+      "kind": "terminate",
+      "status": "completed"
+    }
+  ],
+  "edges": [
+    {
+      "from": "a",
+      "to": "end",
+      "when": {
+        "kind": "always"
+      }
+    }
+  ],
+  "entrypoint": "a"
+}

@@ -81,8 +81,12 @@ canonicalizer implements these rules:
    omitted (alpha has no such defaults yet; the rule exists so evolution doesn't break
    equivalence).
 4. **Empty containers**: optional top-level sections (`types`, `constants`,
-   `contextSchema`, `policies`, `outputs`) are omitted when empty; required sections
-   (`metadata`, `operations`, `nodes`, `edges`) are always present.
+   `contextSchema`, `policies`, `outputs`) are omitted when empty — this is an
+   **emitter/builder obligation** (MUST, or two builders would emit different bytes for
+   the same logical workflow), not a canonicalizer transformation: readers and writers
+   preserve an explicitly-present empty section as-is on round-trip, and
+   `canonicalize()` never drops it. Required sections (`metadata`, `operations`,
+   `nodes`, `edges`) are always present.
 5. **Array order is semantic**: `nodes` and `edges` preserve authoring declaration
    order; canonicalization MUST NOT sort arrays. Builders must emit arrays
    deterministically (declaration order).
@@ -91,8 +95,9 @@ canonicalizer implements these rules:
 7. **Execution-order alignment**: because JCS sorts map keys, "declaration order" is not
    observable for map-shaped sections on the canonical wire. Therefore deterministic
    execution order for `contextWrites` application and `input` binding evaluation is
-   **lexicographic key order**. (The alpha spec text is reconciled to this wording at
-   Step 1.6.)
+   **lexicographic key order** — where "lexicographic" means **RFC 8785 key order**
+   (UTF-16 code-unit comparison) in every SDK; do not substitute code-point or locale
+   collation (they diverge for non-BMP keys).
 
 Notes:
 - **Numbers** follow RFC 8785's ECMAScript serialization: `1.0` canonicalizes to `1`,

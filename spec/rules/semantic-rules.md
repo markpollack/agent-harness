@@ -39,13 +39,15 @@
 ## Implementation notes per language
 
 - **SEM-07 / SEM-14 (duplicates in map-shaped sections)**: after JSON parsing these are
-  unrepresentable in any language whose maps reject duplicate keys. The rules exist for
-  two real surfaces: (a) **raw JSON with duplicate keys** — parsers MUST NOT silently
-  last-wins; the Java reader enables strict duplicate-key detection and rejects the
-  document at parse (`SCHEMA_INVALID`); SDKs SHOULD do the same where their parser
-  allows; (b) **builder APIs that accumulate writes as lists** before serialization —
-  those MUST check and report `DUPLICATE_CONTEXT_WRITE` / `DUPLICATE_BINDING_TARGET`
-  at build/validate time.
+  unrepresentable in any language whose maps reject duplicate keys. The rules cover two
+  surfaces, both mandatory: (a) **raw JSON with duplicate keys** — every conforming
+  validator MUST detect duplicate keys at parse and reject the document (never silent
+  last-wins). The Java reader uses strict duplicate-key detection (`SCHEMA_INVALID`);
+  Python uses an `object_pairs_hook`; TypeScript must check during its own parse step
+  (naive `JSON.parse` loses the duplicate and would wrongly accept the corpus's
+  duplicate-key fixtures). (b) **builder APIs that accumulate writes as lists** before
+  serialization — those MUST check and report `DUPLICATE_CONTEXT_WRITE` /
+  `DUPLICATE_BINDING_TARGET` at build/validate time.
 - **SEM-08 + SEM-11** operate on the edge set restricted to edges whose endpoints exist
   (SEM-02 already reports the others); SEM-08 runs only when SEM-06 passes.
 - **SEM-12** extracts the node id as the segment between `$node.` and the next `.` (or
@@ -64,8 +66,9 @@
   guaranteed zero-match failure on reaching it per §16): deliberately not a rule in
   alpha; the spec defines the runtime outcome (workflow fails deterministically) and a
   fail-by-default shape may be intentional. Revisit with real-workflow evidence.
-- **`$node.<id>.decision` on a non-decision node**: part of the Step 1.6 binding-grammar
-  freeze.
+- **`$node.<id>.decision` on a non-decision node**: resolved at the Step 1.6 grammar
+  freeze as a *runtime* deterministic binding failure (alpha spec §12/§13), not a
+  static rule; a static variant remains a post-alpha candidate.
 
 ## Revision history
 

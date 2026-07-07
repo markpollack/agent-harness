@@ -23,6 +23,12 @@ public record BackoffSpec(
         if (initialMillis < 0) {
             throw new IllegalArgumentException("initialMillis must be >= 0: " + initialMillis);
         }
+        if (maxMillis != null && maxMillis < 0) {
+            throw new IllegalArgumentException("maxMillis must be >= 0: " + maxMillis);
+        }
+        if (multiplier != null && multiplier <= 0) {
+            throw new IllegalArgumentException("multiplier must be > 0: " + multiplier);
+        }
     }
 
     /** Alpha backoff strategies. */

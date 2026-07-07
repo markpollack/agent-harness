@@ -1,0 +1,45 @@
+{
+  "apiVersion": "workflow/v2alpha",
+  "kind": "Workflow",
+  "metadata": {
+    "name": "invalid-backoff-initial-exceeds-max",
+    "version": "1.0.0"
+  },
+  "operations": {
+    "work": {
+      "ref": "java:test.work:v1"
+    }
+  },
+  "nodes": [
+    {
+      "id": "a",
+      "kind": "task",
+      "operation": "work",
+      "policies": {
+        "retry": {
+          "maxAttempts": 2,
+          "backoff": {
+            "strategy": "fixed",
+            "initialMillis": 5000,
+            "maxMillis": 100
+          }
+        }
+      }
+    },
+    {
+      "id": "end",
+      "kind": "terminate",
+      "status": "completed"
+    }
+  ],
+  "edges": [
+    {
+      "from": "a",
+      "to": "end",
+      "when": {
+        "kind": "always"
+      }
+    }
+  ],
+  "entrypoint": "a"
+}
