@@ -7,8 +7,8 @@ package io.github.markpollack.workflow.engine;
  * event type.
  *
  * <p><b>Wire names are NOT these constant names.</b> The §9 wire forms are CamelCase
- * ({@code WorkflowStarted}, …); the JSON projection and its name mapping are pinned at
- * the Step 2.5 event freeze — never serialize this enum with default naming.
+ * ({@code WorkflowStarted}, …) — use {@link #wireName()}; the full JSON projection is
+ * pinned at the Step 2.5 event freeze — never serialize this enum with default naming.
  */
 public enum WorkflowEventType {
     WORKFLOW_STARTED,
@@ -22,5 +22,14 @@ public enum WorkflowEventType {
     EDGE_SELECTED,
     NODE_COMPLETED,
     WORKFLOW_COMPLETED,
-    WORKFLOW_FAILED
+    WORKFLOW_FAILED;
+
+    /** The §9 CamelCase wire form ({@code WorkflowStarted}, {@code EdgeSelected}, …). */
+    public String wireName() {
+        StringBuilder sb = new StringBuilder();
+        for (String part : name().split("_")) {
+            sb.append(part.charAt(0)).append(part.substring(1).toLowerCase(java.util.Locale.ROOT));
+        }
+        return sb.toString();
+    }
 }

@@ -46,4 +46,35 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
+
+    <build>
+        <plugins>
+            <!-- Interpreter conformance tests run against the Conformance Kit (../spec):
+                 the golden spec fixture drives execution and the captured golden event
+                 streams under spec/events/ are the engine-conformance fixtures. Never
+                 edit copies under target/ - edit ../spec and rebuild. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-resources-plugin</artifactId>
+                <version>3.3.1</version>
+                <executions>
+                    <execution>
+                        <id>copy-spec-kit-for-tests</id>
+                        <phase>generate-test-resources</phase>
+                        <goals>
+                            <goal>copy-resources</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.build.testOutputDirectory}/spec</outputDirectory>
+                            <resources>
+                                <resource>
+                                    <directory>${project.basedir}/../spec</directory>
+                                </resource>
+                            </resources>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
 </project>
