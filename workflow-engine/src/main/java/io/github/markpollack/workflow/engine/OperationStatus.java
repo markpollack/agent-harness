@@ -14,5 +14,14 @@ public enum OperationStatus {
     FAILURE,
     TIMED_OUT,
     CANCELLED,
-    ABORTED
+    ABORTED;
+
+    /**
+     * The §6 lowercase wire form ({@code success}, {@code timed_out}, …) — the one
+     * projection of this enum that may appear in event payloads. The full
+     * OperationResult JSON projection freezes at Step 2.5.
+     */
+    public String wireName() {
+        return name().toLowerCase(java.util.Locale.ROOT);
+    }
 }
