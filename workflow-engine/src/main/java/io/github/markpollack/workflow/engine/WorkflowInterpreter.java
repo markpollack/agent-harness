@@ -284,16 +284,19 @@ public final class WorkflowInterpreter {
                     spec.policies(), PolicyBundle::timeout);
 
             int attempt = 1;
+            java.time.Instant scheduledFor = null; // set on post-retry dispatches (ledger, D3)
             while (true) {
-                sink.emit(events.operationDispatched(nodeId, ref, attempt));
+                sink.emit(events.operationDispatched(nodeId, ref, attempt, scheduledFor));
                 OperationResult result = executeAttempt(handler,
                         new OperationInvocation(workflowRunId, nodeId, ref, attempt),
                         input, timeoutPolicy);
 
                 if (result.successful()) {
-                    Object output = ((OperationResult.Success) result).output();
+                    OperationResult.Success success = (OperationResult.Success) result;
+                    Object output = success.output();
                     sink.emit(events.operationSucceeded(nodeId, ref, attempt,
-                            output != null ? ValueDisclosure.metadataOnly(output) : null));
+                            output != null ? ValueDisclosure.metadataOnly(output) : null,
+                            success.usage()));
                     return new AttemptOutcome(result, null);
                 }
                 if (!result.routable()) {
@@ -310,6 +313,7 @@ public final class WorkflowInterpreter {
                 RetryDecision decision = RetryDecider.decide(retryPolicy, result, attempt);
                 if (decision instanceof RetryDecision.Retry(long delayMillis, String reason)) {
                     sink.emit(events.retryScheduled(nodeId, ref, attempt, reason, delayMillis, retryPolicy));
+                    scheduledFor = clock.instant().plusMillis(delayMillis);
                     if (!sleep(delayMillis)) {
                         return new AttemptOutcome(null, failWorkflow(nodeId, "aborted",
                                 "interrupted while waiting to retry"));
@@ -353,8 +357,8 @@ public final class WorkflowInterpreter {
             try {
                 OperationResult result = handler.execute(invocation, store.context(), input);
                 return result != null ? result
-                        : OperationResult.failure(ErrorEnvelope.of("UNHANDLED_EXCEPTION",
-                                "operation handler returned null", false));
+                        : OperationResult.failure(new ErrorEnvelope("UNHANDLED_EXCEPTION",
+                                "operation handler returned null", false, ErrorEnvelope.ORIGIN_CODE, null));
             } catch (Exception ex) {
                 return unhandled(ex);
             }
@@ -363,7 +367,7 @@ public final class WorkflowInterpreter {
         private OperationResult unhandled(Throwable ex) {
             String message = ex.getMessage() != null ? ex.getMessage() : ex.getClass().getSimpleName();
             return OperationResult.failure(new ErrorEnvelope("UNHANDLED_EXCEPTION", message, false,
-                    Map.of("exceptionClass", ex.getClass().getName())));
+                    ErrorEnvelope.ORIGIN_CODE, Map.of("exceptionClass", ex.getClass().getName())));
         }
 
         private boolean sleep(long delayMillis) {
@@ -502,7 +506,11 @@ public final class WorkflowInterpreter {
         }
 
         private Flow endWorkflow(String terminalState, String reason, Object result) {
-            sink.emit(events.workflowFailed(terminalState, reason));
+            sink.emit(switch (terminalState) {
+                case "cancelled" -> events.workflowCancelled(reason);
+                case "aborted" -> events.workflowAborted(reason);
+                default -> events.workflowFailed(reason);
+            });
             return new Flow.End(new WorkflowRunOutcome(terminalState, reason, result, null));
         }
 

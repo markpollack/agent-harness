@@ -1,0 +1,17 @@
+{
+  "eventType": "OperationFailed",
+  "workflowRunId": "run-1",
+  "workflowSpecRef": "workflow://registry/pr-review@1.0.0",
+  "sequence": 5,
+  "timestamp": "2026-07-07T12:00:00Z",
+  "nodeId": "a",
+  "operationRef": "java:x:v1",
+  "attemptNumber": 1,
+  "payload": {
+    "resultState": "success",
+    "error": {
+      "code": "X",
+      "retryable": true
+    }
+  }
+}

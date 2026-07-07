@@ -1,0 +1,11 @@
+{
+  "eventType": "WorkflowAborted",
+  "workflowRunId": "run-1",
+  "workflowSpecRef": "workflow://registry/pr-review@1.0.0",
+  "sequence": 16,
+  "timestamp": "2026-07-07T12:00:00Z",
+  "payload": {
+    "terminalState": "aborted",
+    "reason": "unknown operation: java:test.unbound:v1"
+  }
+}

@@ -52,6 +52,7 @@ public final class StepOperationHandler implements OperationHandler {
                     STEP_EXECUTION_FAILED,
                     message,
                     true,
+                    null,
                     Map.of("exceptionClass", ex.getClass().getName())));
         }
     }

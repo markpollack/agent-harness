@@ -1,0 +1,53 @@
+{
+  "events" : [ {
+    "eventType" : "WorkflowStarted",
+    "payload" : {
+      "entrypoint" : "call_api",
+      "workflowName" : "error-edge-routing"
+    },
+    "sequence" : 1
+  }, {
+    "eventType" : "NodeStarted",
+    "nodeId" : "call_api",
+    "payload" : {
+      "nodeKind" : "task"
+    },
+    "sequence" : 2
+  }, {
+    "attemptNumber" : 1,
+    "eventType" : "OperationDispatched",
+    "nodeId" : "call_api",
+    "operationRef" : "java:test.work:v1",
+    "sequence" : 3
+  }, {
+    "attemptNumber" : 1,
+    "eventType" : "OperationFailed",
+    "nodeId" : "call_api",
+    "operationRef" : "java:test.work:v1",
+    "payload" : {
+      "error" : {
+        "code" : "SCHEMA_DRIFT",
+        "message" : "upstream rejected the call",
+        "retryable" : true
+      },
+      "resultState" : "failure"
+    },
+    "sequence" : 4
+  }, {
+    "eventType" : "NodeCompleted",
+    "nodeId" : "call_api",
+    "payload" : {
+      "state" : "failed"
+    },
+    "sequence" : 5
+  }, {
+    "eventType" : "WorkflowFailed",
+    "payload" : {
+      "reason" : "unroutable failure: SCHEMA_DRIFT",
+      "terminalState" : "failed"
+    },
+    "sequence" : 6
+  } ],
+  "spec" : "fixtures/valid/error-edge-routing.json",
+  "workflowRunId" : "golden-run-5"
+}

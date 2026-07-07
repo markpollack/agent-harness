@@ -1,0 +1,42 @@
+{
+  "events" : [ {
+    "eventType" : "WorkflowStarted",
+    "payload" : {
+      "entrypoint" : "fetch_diff",
+      "workflowName" : "pr-review"
+    },
+    "sequence" : 1
+  }, {
+    "eventType" : "NodeStarted",
+    "nodeId" : "fetch_diff",
+    "payload" : {
+      "nodeKind" : "task"
+    },
+    "sequence" : 2
+  }, {
+    "eventType" : "BindingEvaluated",
+    "nodeId" : "fetch_diff",
+    "payload" : {
+      "bindingTarget" : "url",
+      "source" : "$input.url",
+      "status" : "failure"
+    },
+    "sequence" : 3
+  }, {
+    "eventType" : "NodeCompleted",
+    "nodeId" : "fetch_diff",
+    "payload" : {
+      "state" : "failed"
+    },
+    "sequence" : 4
+  }, {
+    "eventType" : "WorkflowFailed",
+    "payload" : {
+      "reason" : "missing source path: $input.url",
+      "terminalState" : "failed"
+    },
+    "sequence" : 5
+  } ],
+  "spec" : "fixtures/valid/golden-pr-review.json",
+  "workflowRunId" : "golden-run-3"
+}

@@ -36,6 +36,7 @@ public final class WorkflowEventFactory {
     private final String workflowRunId;
     private final String workflowSpecRef;
     private final Clock clock;
+    private final String executorId;
     private final AtomicLong sequence = new AtomicLong(0);
 
     public WorkflowEventFactory(String workflowRunId, String workflowSpecRef) {
@@ -43,9 +44,20 @@ public final class WorkflowEventFactory {
     }
 
     public WorkflowEventFactory(String workflowRunId, String workflowSpecRef, Clock clock) {
+        this(workflowRunId, workflowSpecRef, clock, null);
+    }
+
+    /**
+     * @param executorId optional identity of the executing worker/process (evidence
+     *                   ledger, scheduler study D3) — stamped on attempt events'
+     *                   payloads when present; null omits it (in-memory default)
+     */
+    public WorkflowEventFactory(String workflowRunId, String workflowSpecRef, Clock clock,
+            String executorId) {
         this.workflowRunId = Objects.requireNonNull(workflowRunId, "workflowRunId");
         this.workflowSpecRef = Objects.requireNonNull(workflowSpecRef, "workflowSpecRef");
         this.clock = Objects.requireNonNull(clock, "clock");
+        this.executorId = executorId;
     }
 
     /** The sequence of the most recently minted event; 0 if none yet. */
@@ -67,14 +79,36 @@ public final class WorkflowEventFactory {
     }
 
     public WorkflowEvent operationDispatched(String nodeId, String operationRef, int attemptNumber) {
+        return operationDispatched(nodeId, operationRef, attemptNumber, null);
+    }
+
+    /**
+     * Post-retry dispatches carry {@code scheduledFor} — the intended dispatch time the
+     * backoff computed — so the ledger can compare it with the actual {@code timestamp}
+     * (scheduler study D3). Excluded from the deterministic projection, like timestamps.
+     */
+    public WorkflowEvent operationDispatched(String nodeId, String operationRef, int attemptNumber,
+            java.time.Instant scheduledFor) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        if (scheduledFor != null) {
+            payload.put("scheduledFor", scheduledFor.toString());
+        }
+        putExecutor(payload);
         return event(WorkflowEventType.OPERATION_DISPATCHED, requireNodeId(nodeId),
-                requireRef(operationRef), requireAttempt(attemptNumber), null);
+                requireRef(operationRef), requireAttempt(attemptNumber), payload.isEmpty() ? null : payload);
     }
 
     public WorkflowEvent operationSucceeded(String nodeId, String operationRef, int attemptNumber,
             ValueDisclosure outputDisclosure) {
+        return operationSucceeded(nodeId, operationRef, attemptNumber, outputDisclosure, null);
+    }
+
+    public WorkflowEvent operationSucceeded(String nodeId, String operationRef, int attemptNumber,
+            ValueDisclosure outputDisclosure, OperationUsage usage) {
         Map<String, Object> payload = new LinkedHashMap<>();
         putDisclosure(payload, "outputDisclosure", outputDisclosure);
+        putUsage(payload, usage);
+        putExecutor(payload);
         return event(WorkflowEventType.OPERATION_SUCCEEDED, requireNodeId(nodeId),
                 requireRef(operationRef), requireAttempt(attemptNumber), payload.isEmpty() ? null : payload);
     }
@@ -93,9 +127,16 @@ public final class WorkflowEventFactory {
             default -> throw new IllegalArgumentException(
                     "OperationFailed is only emitted for failure/timed_out results, got: " + result.status());
         };
+        OperationUsage usage = switch (result) {
+            case OperationResult.Failure f -> f.usage();
+            case OperationResult.TimedOut t -> t.usage();
+            default -> null;
+        };
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("resultState", result.status().wireName());
         payload.put("error", WorkflowEventJson.mapper().convertValue(error, MAP_TYPE));
+        putUsage(payload, usage);
+        putExecutor(payload);
         return event(WorkflowEventType.OPERATION_FAILED, requireNodeId(nodeId),
                 requireRef(operationRef), requireAttempt(attemptNumber), payload);
     }
@@ -166,11 +207,24 @@ public final class WorkflowEventFactory {
         return event(WorkflowEventType.WORKFLOW_COMPLETED, null, null, null, payload);
     }
 
-    public WorkflowEvent workflowFailed(String terminalState, String reason) {
+    public WorkflowEvent workflowFailed(String reason) {
+        return terminalEvent(WorkflowEventType.WORKFLOW_FAILED, "failed", reason);
+    }
+
+    public WorkflowEvent workflowCancelled(String reason) {
+        return terminalEvent(WorkflowEventType.WORKFLOW_CANCELLED, "cancelled", reason);
+    }
+
+    public WorkflowEvent workflowAborted(String reason) {
+        return terminalEvent(WorkflowEventType.WORKFLOW_ABORTED, "aborted", reason);
+    }
+
+    /** Each §9 terminal workflow state has exactly one terminal event type (2.5 freeze). */
+    private WorkflowEvent terminalEvent(WorkflowEventType type, String terminalState, String reason) {
         Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("terminalState", Objects.requireNonNull(terminalState, "terminalState"));
+        payload.put("terminalState", terminalState);
         payload.put("reason", Objects.requireNonNull(reason, "reason"));
-        return event(WorkflowEventType.WORKFLOW_FAILED, null, null, null, payload);
+        return event(type, null, null, null, payload);
     }
 
     private WorkflowEvent event(WorkflowEventType type, String nodeId, String operationRef,
@@ -186,6 +240,18 @@ public final class WorkflowEventFactory {
     private static void putDisclosure(Map<String, Object> payload, String key, ValueDisclosure disclosure) {
         if (disclosure != null) {
             payload.put(key, WorkflowEventJson.mapper().convertValue(disclosure, MAP_TYPE));
+        }
+    }
+
+    private static void putUsage(Map<String, Object> payload, OperationUsage usage) {
+        if (usage != null) {
+            payload.put("usage", WorkflowEventJson.mapper().convertValue(usage, MAP_TYPE));
+        }
+    }
+
+    private void putExecutor(Map<String, Object> payload) {
+        if (executorId != null) {
+            payload.put("executorId", executorId);
         }
     }
 

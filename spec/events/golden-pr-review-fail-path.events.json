@@ -227,25 +227,25 @@
     "payload" : {
       "condition" : {
         "kind" : "decisionResult",
-        "value" : "post"
+        "value" : "fail"
       },
       "from" : "route",
       "reason" : "decision_outcome_match",
-      "to" : "post_comment"
+      "to" : "rejected"
     },
     "sequence" : 22
   }, {
     "eventType" : "NodeStarted",
-    "nodeId" : "post_comment",
+    "nodeId" : "rejected",
     "payload" : {
-      "nodeKind" : "task"
+      "nodeKind" : "terminate"
     },
     "sequence" : 23
   }, {
     "eventType" : "BindingEvaluated",
-    "nodeId" : "post_comment",
+    "nodeId" : "rejected",
     "payload" : {
-      "bindingTarget" : "review",
+      "bindingTarget" : "result",
       "source" : "$node.analyze_diff.output",
       "status" : "success",
       "valueDisclosure" : {
@@ -256,97 +256,20 @@
     },
     "sequence" : 24
   }, {
-    "attemptNumber" : 1,
-    "eventType" : "OperationDispatched",
-    "nodeId" : "post_comment",
-    "operationRef" : "typescript:github.post_review:v1",
+    "eventType" : "NodeCompleted",
+    "nodeId" : "rejected",
+    "payload" : {
+      "state" : "succeeded"
+    },
     "sequence" : 25
   }, {
-    "attemptNumber" : 1,
-    "eventType" : "OperationSucceeded",
-    "nodeId" : "post_comment",
-    "operationRef" : "typescript:github.post_review:v1",
+    "eventType" : "WorkflowFailed",
     "payload" : {
-      "outputDisclosure" : {
-        "mode" : "metadata_only",
-        "reason" : "default_policy",
-        "type" : "object"
-      }
+      "reason" : "terminate:rejected",
+      "terminalState" : "failed"
     },
     "sequence" : 26
-  }, {
-    "eventType" : "NodeCompleted",
-    "nodeId" : "post_comment",
-    "payload" : {
-      "state" : "succeeded"
-    },
-    "sequence" : 27
-  }, {
-    "eventType" : "EdgeSelected",
-    "nodeId" : "post_comment",
-    "payload" : {
-      "condition" : {
-        "kind" : "always"
-      },
-      "from" : "post_comment",
-      "reason" : "always",
-      "to" : "done"
-    },
-    "sequence" : 28
-  }, {
-    "eventType" : "NodeStarted",
-    "nodeId" : "done",
-    "payload" : {
-      "nodeKind" : "terminate"
-    },
-    "sequence" : 29
-  }, {
-    "eventType" : "BindingEvaluated",
-    "nodeId" : "done",
-    "payload" : {
-      "bindingTarget" : "result",
-      "source" : "$node.post_comment.output",
-      "status" : "success",
-      "valueDisclosure" : {
-        "mode" : "metadata_only",
-        "reason" : "default_policy",
-        "type" : "object"
-      }
-    },
-    "sequence" : 30
-  }, {
-    "eventType" : "NodeCompleted",
-    "nodeId" : "done",
-    "payload" : {
-      "state" : "succeeded"
-    },
-    "sequence" : 31
-  }, {
-    "eventType" : "BindingEvaluated",
-    "nodeId" : "done",
-    "payload" : {
-      "bindingTarget" : "result",
-      "source" : "$node.post_comment.output",
-      "status" : "success",
-      "valueDisclosure" : {
-        "mode" : "metadata_only",
-        "reason" : "default_policy",
-        "type" : "object"
-      }
-    },
-    "sequence" : 32
-  }, {
-    "eventType" : "WorkflowCompleted",
-    "payload" : {
-      "outputDisclosure" : {
-        "mode" : "metadata_only",
-        "reason" : "default_policy",
-        "type" : "object"
-      },
-      "terminalState" : "completed"
-    },
-    "sequence" : 33
   } ],
   "spec" : "fixtures/valid/golden-pr-review.json",
-  "workflowRunId" : "golden-run-1"
+  "workflowRunId" : "golden-run-2"
 }

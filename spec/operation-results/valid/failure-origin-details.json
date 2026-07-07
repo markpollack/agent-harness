@@ -1,0 +1,12 @@
+{
+  "status": "failure",
+  "error": {
+    "code": "UNHANDLED_EXCEPTION",
+    "message": "boom",
+    "retryable": false,
+    "origin": "code",
+    "details": {
+      "exceptionClass": "java.lang.IllegalStateException"
+    }
+  }
+}

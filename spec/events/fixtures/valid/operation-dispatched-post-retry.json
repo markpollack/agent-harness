@@ -1,0 +1,14 @@
+{
+  "eventType": "OperationDispatched",
+  "workflowRunId": "run-1",
+  "workflowSpecRef": "workflow://registry/pr-review@1.0.0",
+  "sequence": 7,
+  "timestamp": "2026-07-07T12:00:00Z",
+  "nodeId": "call_api",
+  "operationRef": "java:test.work:v1",
+  "attemptNumber": 2,
+  "payload": {
+    "scheduledFor": "2026-07-07T12:00:00.500Z",
+    "executorId": "worker-7"
+  }
+}

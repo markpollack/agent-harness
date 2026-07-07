@@ -1,0 +1,17 @@
+{
+  "status": "failure",
+  "error": {
+    "code": "RATE_LIMIT",
+    "message": "429 from upstream: retry after 30s",
+    "retryable": true,
+    "origin": "infra",
+    "details": {
+      "httpStatus": 429,
+      "retryAfterSeconds": 30
+    }
+  },
+  "usage": {
+    "tokens": 2048,
+    "costUsd": 0.0125
+  }
+}

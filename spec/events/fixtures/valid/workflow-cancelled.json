@@ -1,0 +1,11 @@
+{
+  "eventType": "WorkflowCancelled",
+  "workflowRunId": "run-1",
+  "workflowSpecRef": "workflow://registry/pr-review@1.0.0",
+  "sequence": 15,
+  "timestamp": "2026-07-07T12:00:00Z",
+  "payload": {
+    "terminalState": "cancelled",
+    "reason": "user_stop"
+  }
+}

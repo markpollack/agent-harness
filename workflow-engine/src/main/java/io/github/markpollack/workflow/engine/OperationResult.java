@@ -9,8 +9,13 @@ import java.util.Objects;
  *
  * <p>Sealed variants (rather than one record with nullable fields) make invalid
  * combinations unrepresentable: a success cannot carry an error envelope, a failure
- * cannot carry an output. The wire projection (§6 shapes, frozen at Step 2.5) maps each
- * variant to its status-discriminated JSON form.
+ * cannot carry an output. The wire projection ({@code spec/operation-result.schema.json},
+ * frozen at Step 2.5) maps each variant to its status-discriminated JSON form via
+ * {@link OperationResultCodec}.
+ *
+ * <p>Terminal work-bearing variants ({@code success}/{@code failure}/{@code timed_out})
+ * may carry {@link OperationUsage} — the evidence-ledger channel from worker to events;
+ * {@code cancelled}/{@code aborted} attempts never report usage.
  *
  * <p>The semantic properties are <em>taxonomic</em>, not policy: {@link #retryable()}
  * says the state is in the retryable family and the error envelope does not forbid
@@ -60,15 +65,27 @@ public sealed interface OperationResult
     }
 
     static Success success(Object output) {
-        return new Success(output);
+        return new Success(output, null);
+    }
+
+    static Success success(Object output, OperationUsage usage) {
+        return new Success(output, usage);
     }
 
     static Failure failure(ErrorEnvelope error) {
-        return new Failure(error);
+        return new Failure(error, null);
+    }
+
+    static Failure failure(ErrorEnvelope error, OperationUsage usage) {
+        return new Failure(error, usage);
     }
 
     static TimedOut timedOut(ErrorEnvelope error) {
-        return new TimedOut(error);
+        return new TimedOut(error, null);
+    }
+
+    static TimedOut timedOut(ErrorEnvelope error, OperationUsage usage) {
+        return new TimedOut(error, usage);
     }
 
     static Cancelled cancelled(String reason) {
@@ -80,7 +97,7 @@ public sealed interface OperationResult
     }
 
     /** Operation completed normally; {@code output} may be null for void-like operations. */
-    record Success(Object output) implements OperationResult {
+    record Success(Object output, OperationUsage usage) implements OperationResult {
         @Override
         public OperationStatus status() {
             return OperationStatus.SUCCESS;
@@ -88,7 +105,7 @@ public sealed interface OperationResult
     }
 
     /** Operation completed unsuccessfully with a normalized error envelope. */
-    record Failure(ErrorEnvelope error) implements OperationResult {
+    record Failure(ErrorEnvelope error, OperationUsage usage) implements OperationResult {
         public Failure {
             Objects.requireNonNull(error, "error");
         }
@@ -100,7 +117,7 @@ public sealed interface OperationResult
     }
 
     /** Timeout policy produced a terminal attempt result (per-attempt budget expired). */
-    record TimedOut(ErrorEnvelope error) implements OperationResult {
+    record TimedOut(ErrorEnvelope error, OperationUsage usage) implements OperationResult {
         public TimedOut {
             Objects.requireNonNull(error, "error");
         }

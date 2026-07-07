@@ -1,0 +1,436 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/markpollack/agent-workflow/main/spec/events/workflow-event.schema.json",
+  "title": "Workflow IR V2 Alpha WorkflowEvent",
+  "description": "Normative wire projection of the canonical WorkflowEvent envelope (alpha spec sections 8-11), frozen at Step 2.5. One envelope, fourteen event types (twelve required section 9 types plus the terminal WorkflowCancelled/WorkflowAborted; a run-level 'paused' state is reserved without an event type). Node/operation-scoped envelope fields are required exactly where section 9 requires them and prohibited on workflow-level events. Sequences are 1-based and monotonic per workflowRunId; 0 is reserved to mean 'no event committed yet'. The deterministic conformance projection (spec/README.md) excludes timestamp, attributes, and payload.scheduledFor. Strict posture per DD-19: additionalProperties false everywhere; the envelope 'attributes' bag (dotted-namespace keys, ignorable, never control-flow-relevant) is the only extension point.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["eventType", "workflowRunId", "workflowSpecRef", "sequence", "timestamp"],
+  "properties": {
+    "eventType": {
+      "enum": [
+        "WorkflowStarted", "NodeStarted", "OperationDispatched", "OperationSucceeded",
+        "OperationFailed", "RetryScheduled", "BindingEvaluated", "ContextWriteApplied",
+        "EdgeSelected", "NodeCompleted", "WorkflowCompleted", "WorkflowFailed",
+        "WorkflowCancelled", "WorkflowAborted"
+      ]
+    },
+    "workflowRunId": { "type": "string", "minLength": 1 },
+    "workflowSpecRef": { "type": "string", "minLength": 1 },
+    "sequence": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "nodeId": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" },
+    "operationRef": { "type": "string", "minLength": 1 },
+    "attemptNumber": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
+    "payload": { "type": "object" },
+    "attributes": {
+      "type": "object",
+      "propertyNames": { "pattern": "^[A-Za-z0-9_-]+(\\.[A-Za-z0-9_-]+)+$" },
+      "$comment": "DD-19 extension bag: dotted-namespace keys, ignorable by every conforming consumer, never control-flow-relevant, excluded from the deterministic projection; section 11 disclosure classes apply to values."
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "eventType": { "const": "WorkflowStarted" } } },
+      "then": {
+        "$ref": "#/$defs/workflowLevel",
+        "required": ["payload"],
+        "properties": {
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["workflowName", "entrypoint"],
+            "properties": {
+              "workflowName": { "type": "string", "minLength": 1 },
+              "entrypoint": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "eventType": { "const": "NodeStarted" } } },
+      "then": {
+        "$ref": "#/$defs/nodeLevel",
+        "required": ["payload"],
+        "properties": {
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["nodeKind"],
+            "properties": {
+              "nodeKind": { "enum": ["task", "decision", "terminate"] }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "eventType": { "const": "OperationDispatched" } } },
+      "then": {
+        "$ref": "#/$defs/attemptLevel",
+        "properties": {
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "scheduledFor": {
+                "type": "string",
+                "format": "date-time",
+                "$comment": "Post-retry dispatches: the intended dispatch time the backoff computed, comparable with the actual envelope timestamp (evidence ledger). Excluded from the deterministic projection."
+              },
+              "executorId": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "eventType": { "const": "OperationSucceeded" } } },
+      "then": {
+        "$ref": "#/$defs/attemptLevel",
+        "properties": {
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "outputDisclosure": { "$ref": "#/$defs/valueDisclosure" },
+              "usage": { "$ref": "#/$defs/usage" },
+              "executorId": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "eventType": { "const": "OperationFailed" } } },
+      "then": {
+        "$ref": "#/$defs/attemptLevel",
+        "required": ["payload"],
+        "properties": {
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["resultState", "error"],
+            "properties": {
+              "resultState": { "enum": ["failure", "timed_out"] },
+              "error": { "$ref": "#/$defs/errorEnvelope" },
+              "usage": { "$ref": "#/$defs/usage" },
+              "executorId": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "eventType": { "const": "RetryScheduled" } } },
+      "then": {
+        "$ref": "#/$defs/attemptLevel",
+        "required": ["payload"],
+        "properties": {
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["reason", "delayMillis", "policy"],
+            "properties": {
+              "reason": { "type": "string", "minLength": 1 },
+              "delayMillis": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+              "policy": { "$ref": "#/$defs/retryPolicy" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "eventType": { "const": "BindingEvaluated" } } },
+      "then": {
+        "$ref": "#/$defs/nodeLevel",
+        "required": ["payload"],
+        "properties": {
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["bindingTarget", "source", "status"],
+            "properties": {
+              "bindingTarget": { "type": "string", "minLength": 1 },
+              "source": { "type": "string", "minLength": 1 },
+              "status": { "enum": ["success", "failure"] },
+              "valueDisclosure": { "$ref": "#/$defs/valueDisclosure" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "eventType": { "const": "ContextWriteApplied" } } },
+      "then": {
+        "$ref": "#/$defs/nodeLevel",
+        "required": ["payload"],
+        "properties": {
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["contextKey", "source"],
+            "properties": {
+              "contextKey": { "type": "string", "minLength": 1 },
+              "source": { "type": "string", "minLength": 1 },
+              "valueDisclosure": { "$ref": "#/$defs/valueDisclosure" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "eventType": { "const": "EdgeSelected" } } },
+      "then": {
+        "$ref": "#/$defs/nodeLevel",
+        "required": ["payload"],
+        "properties": {
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["from", "to", "condition", "reason"],
+            "properties": {
+              "from": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" },
+              "to": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" },
+              "condition": { "$ref": "#/$defs/edgeCondition" },
+              "reason": { "enum": ["always", "decision_outcome_match", "error_match"] }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "eventType": { "const": "NodeCompleted" } } },
+      "then": {
+        "$ref": "#/$defs/nodeLevel",
+        "required": ["payload"],
+        "properties": {
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["state"],
+            "properties": {
+              "state": { "enum": ["succeeded", "failed", "cancelled", "aborted"] }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "eventType": { "const": "WorkflowCompleted" } } },
+      "then": {
+        "$ref": "#/$defs/workflowLevel",
+        "required": ["payload"],
+        "properties": {
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["terminalState"],
+            "properties": {
+              "terminalState": { "const": "completed" },
+              "outputDisclosure": { "$ref": "#/$defs/valueDisclosure" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "eventType": { "const": "WorkflowFailed" } } },
+      "then": {
+        "$ref": "#/$defs/workflowLevel",
+        "required": ["payload"],
+        "properties": {
+          "payload": { "$ref": "#/$defs/terminalFailurePayload" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "eventType": { "const": "WorkflowCancelled" } } },
+      "then": {
+        "$ref": "#/$defs/workflowLevel",
+        "required": ["payload"],
+        "properties": {
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["terminalState", "reason"],
+            "properties": {
+              "terminalState": { "const": "cancelled" },
+              "reason": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "eventType": { "const": "WorkflowAborted" } } },
+      "then": {
+        "$ref": "#/$defs/workflowLevel",
+        "required": ["payload"],
+        "properties": {
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["terminalState", "reason"],
+            "properties": {
+              "terminalState": { "const": "aborted" },
+              "reason": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "workflowLevel": {
+      "$comment": "Workflow-level events carry no node/operation/attempt identity.",
+      "properties": {
+        "nodeId": false,
+        "operationRef": false,
+        "attemptNumber": false
+      }
+    },
+    "nodeLevel": {
+      "$comment": "Node-level events carry nodeId but no operation/attempt identity.",
+      "required": ["nodeId"],
+      "properties": {
+        "operationRef": false,
+        "attemptNumber": false
+      }
+    },
+    "attemptLevel": {
+      "$comment": "Attempt-level events carry full dispatch identity. Attempt duration derives from the Dispatched->terminal event timestamps.",
+      "required": ["nodeId", "operationRef", "attemptNumber"]
+    },
+    "terminalFailurePayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["terminalState", "reason"],
+      "properties": {
+        "terminalState": { "const": "failed" },
+        "reason": { "type": "string", "minLength": 1 }
+      }
+    },
+    "valueDisclosure": {
+      "$comment": "Section 11 disclosure form. Raw payload values never appear in canonical events; type names are JSON-family names, never host-language class names.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "type"],
+          "properties": {
+            "mode": { "const": "metadata_only" },
+            "type": { "enum": ["string", "number", "boolean", "object", "array", "null"] },
+            "sizeBytes": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+            "reason": { "type": "string", "minLength": 1 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "algorithm", "hash"],
+          "properties": {
+            "mode": { "const": "hmac_hash" },
+            "algorithm": { "type": "string", "minLength": 1 },
+            "hash": { "type": "string", "minLength": 1 },
+            "type": { "enum": ["string", "number", "boolean", "object", "array", "null"] },
+            "sizeBytes": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+            "reason": { "type": "string", "minLength": 1 }
+          }
+        }
+      ]
+    },
+    "errorEnvelope": {
+      "$comment": "Mirrors spec/operation-result.schema.json#/$defs/errorEnvelope (kept in lockstep; any change is a cross-SDK change to both files).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "retryable"],
+      "properties": {
+        "code": { "type": "string", "minLength": 1 },
+        "message": { "type": "string" },
+        "retryable": { "type": "boolean" },
+        "origin": { "enum": ["infra", "code"] },
+        "details": { "type": "object" }
+      }
+    },
+    "usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "tokens": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "costUsd": { "type": "number", "minimum": 0 }
+      }
+    },
+    "retryPolicy": {
+      "$comment": "Snapshot of the effective (precedence-resolved) retry policy; mirrors the authored policy shape in workflow-v2alpha.schema.json (kept in lockstep).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["maxAttempts"],
+      "properties": {
+        "maxAttempts": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
+        "backoff": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["strategy", "initialMillis"],
+          "properties": {
+            "strategy": { "enum": ["fixed", "exponential"] },
+            "initialMillis": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+            "maxMillis": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+            "multiplier": { "type": "number", "exclusiveMinimum": 0 }
+          }
+        },
+        "retryOn": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["code"],
+            "properties": {
+              "code": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    },
+    "edgeCondition": {
+      "$comment": "Mirrors the authored edge-condition shape in workflow-v2alpha.schema.json (kept in lockstep).",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind"],
+          "properties": { "kind": { "const": "always" } }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "value"],
+          "properties": {
+            "kind": { "const": "decisionResult" },
+            "value": { "type": "string", "minLength": 1 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "match"],
+          "properties": {
+            "kind": { "const": "error" },
+            "match": {
+              "type": "object",
+              "additionalProperties": false,
+              "minProperties": 1,
+              "properties": {
+                "code": { "type": "string", "minLength": 1 },
+                "retryable": { "type": "boolean" }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/markpollack/agent-workflow/main/spec/operation-result.schema.json",
+  "title": "Workflow IR V2 Alpha OperationResult",
+  "description": "Normative wire projection of the OperationResult envelope (alpha spec section 6): the normalized outcome of exactly one operation attempt, as returned by workers in any language and recorded by the journal. Status-discriminated lowercase forms; no nulls on the wire (absent is the only empty state); cross-language equivalence is canonical byte equality (RFC 8785). Frozen at Step 2.5; evolution within workflow/v2alpha is additive-only.",
+  "oneOf": [
+    { "$ref": "#/$defs/success" },
+    { "$ref": "#/$defs/failure" },
+    { "$ref": "#/$defs/timedOut" },
+    { "$ref": "#/$defs/cancelled" },
+    { "$ref": "#/$defs/aborted" }
+  ],
+  "$defs": {
+    "success": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "status": { "const": "success" },
+        "output": {
+          "$comment": "Deliberately open: the operation's output value; any JSON value except null (a void-like operation omits output entirely)."
+        },
+        "usage": { "$ref": "#/$defs/usage" }
+      },
+      "not": { "properties": { "output": { "type": "null" } }, "required": ["output"] }
+    },
+    "failure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "error"],
+      "properties": {
+        "status": { "const": "failure" },
+        "error": { "$ref": "#/$defs/errorEnvelope" },
+        "usage": { "$ref": "#/$defs/usage" }
+      }
+    },
+    "timedOut": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "error"],
+      "properties": {
+        "status": { "const": "timed_out" },
+        "error": { "$ref": "#/$defs/errorEnvelope" },
+        "usage": { "$ref": "#/$defs/usage" }
+      }
+    },
+    "cancelled": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "reason"],
+      "properties": {
+        "status": { "const": "cancelled" },
+        "reason": { "type": "string", "minLength": 1 }
+      }
+    },
+    "aborted": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "reason"],
+      "properties": {
+        "status": { "const": "aborted" },
+        "reason": { "type": "string", "minLength": 1 }
+      }
+    },
+    "errorEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "retryable"],
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "$comment": "Stable machine-matchable code. Reserved codes (section 6): OPERATION_TIMEOUT, INTERRUPTED, UNHANDLED_EXCEPTION."
+        },
+        "message": { "type": "string" },
+        "retryable": {
+          "type": "boolean",
+          "$comment": "Advisory input to the interpreter's retry policy, never a command (section 17 gate item 3)."
+        },
+        "origin": {
+          "enum": ["infra", "code"],
+          "$comment": "Optional crashed-vs-failed distinction: infra = the environment broke; code = the operation's own logic failed. Producers set it when they know it and omit it when they don't."
+        },
+        "details": {
+          "type": "object",
+          "$comment": "Deliberately open: diagnostics, cause chains, stack traces - permitted under section 11 disclosure rules."
+        }
+      }
+    },
+    "usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "tokens": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "costUsd": { "type": "number", "minimum": 0 }
+      },
+      "$comment": "Evidence-ledger metrics for the attempt; the agent-controller computes J (cost to jury-verified result) from these. First-class fields, not attributes (DD-19 bright line)."
+    }
+  }
+}

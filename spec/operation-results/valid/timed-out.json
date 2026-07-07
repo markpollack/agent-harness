@@ -1,0 +1,8 @@
+{
+  "status": "timed_out",
+  "error": {
+    "code": "OPERATION_TIMEOUT",
+    "message": "Operation exceeded 300000 ms per-attempt timeout",
+    "retryable": true
+  }
+}

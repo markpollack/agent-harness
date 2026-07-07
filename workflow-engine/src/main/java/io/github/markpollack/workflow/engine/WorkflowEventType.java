@@ -1,14 +1,15 @@
 package io.github.markpollack.workflow.engine;
 
 /**
- * The required canonical event types (alpha spec §9). {@code WorkflowCancelled} /
- * {@code WorkflowAborted} are added at the Step 2.5 event-contract freeze (queued);
- * retry exhaustion is expressed through routing + terminal semantics, not a dedicated
- * event type.
+ * The canonical event types (alpha spec §9, frozen at Step 2.5): the twelve required
+ * types plus the terminal {@code WorkflowCancelled}/{@code WorkflowAborted} (every
+ * §9 terminal workflow state has exactly one terminal event type). Retry exhaustion is
+ * expressed through routing + terminal semantics, not a dedicated event type. A
+ * run-level {@code paused} state is reserved, deliberately without an event type yet.
  *
  * <p><b>Wire names are NOT these constant names.</b> The §9 wire forms are CamelCase
- * ({@code WorkflowStarted}, …) — use {@link #wireName()}; the full JSON projection is
- * pinned at the Step 2.5 event freeze — never serialize this enum with default naming.
+ * ({@code WorkflowStarted}, …) — use {@link #wireName()}; never serialize this enum
+ * with default naming ({@code spec/events/workflow-event.schema.json} is normative).
  */
 public enum WorkflowEventType {
     WORKFLOW_STARTED,
@@ -22,7 +23,9 @@ public enum WorkflowEventType {
     EDGE_SELECTED,
     NODE_COMPLETED,
     WORKFLOW_COMPLETED,
-    WORKFLOW_FAILED;
+    WORKFLOW_FAILED,
+    WORKFLOW_CANCELLED,
+    WORKFLOW_ABORTED;
 
     /** The §9 CamelCase wire form ({@code WorkflowStarted}, {@code EdgeSelected}, …). */
     public String wireName() {

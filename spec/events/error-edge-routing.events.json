@@ -1,0 +1,212 @@
+{
+  "events" : [ {
+    "eventType" : "WorkflowStarted",
+    "payload" : {
+      "entrypoint" : "call_api",
+      "workflowName" : "error-edge-routing"
+    },
+    "sequence" : 1
+  }, {
+    "eventType" : "NodeStarted",
+    "nodeId" : "call_api",
+    "payload" : {
+      "nodeKind" : "task"
+    },
+    "sequence" : 2
+  }, {
+    "attemptNumber" : 1,
+    "eventType" : "OperationDispatched",
+    "nodeId" : "call_api",
+    "operationRef" : "java:test.work:v1",
+    "sequence" : 3
+  }, {
+    "attemptNumber" : 1,
+    "eventType" : "OperationFailed",
+    "nodeId" : "call_api",
+    "operationRef" : "java:test.work:v1",
+    "payload" : {
+      "error" : {
+        "code" : "RATE_LIMIT",
+        "message" : "upstream rejected the call",
+        "retryable" : true
+      },
+      "resultState" : "failure"
+    },
+    "sequence" : 4
+  }, {
+    "attemptNumber" : 1,
+    "eventType" : "RetryScheduled",
+    "nodeId" : "call_api",
+    "operationRef" : "java:test.work:v1",
+    "payload" : {
+      "delayMillis" : 500,
+      "policy" : {
+        "backoff" : {
+          "initialMillis" : 500,
+          "maxMillis" : 10000,
+          "multiplier" : 2,
+          "strategy" : "exponential"
+        },
+        "maxAttempts" : 3,
+        "retryOn" : [ {
+          "code" : "RATE_LIMIT"
+        } ]
+      },
+      "reason" : "policy_allows"
+    },
+    "sequence" : 5
+  }, {
+    "attemptNumber" : 2,
+    "eventType" : "OperationDispatched",
+    "nodeId" : "call_api",
+    "operationRef" : "java:test.work:v1",
+    "sequence" : 6
+  }, {
+    "attemptNumber" : 2,
+    "eventType" : "OperationFailed",
+    "nodeId" : "call_api",
+    "operationRef" : "java:test.work:v1",
+    "payload" : {
+      "error" : {
+        "code" : "RATE_LIMIT",
+        "message" : "upstream rejected the call",
+        "retryable" : true
+      },
+      "resultState" : "failure"
+    },
+    "sequence" : 7
+  }, {
+    "attemptNumber" : 2,
+    "eventType" : "RetryScheduled",
+    "nodeId" : "call_api",
+    "operationRef" : "java:test.work:v1",
+    "payload" : {
+      "delayMillis" : 1000,
+      "policy" : {
+        "backoff" : {
+          "initialMillis" : 500,
+          "maxMillis" : 10000,
+          "multiplier" : 2,
+          "strategy" : "exponential"
+        },
+        "maxAttempts" : 3,
+        "retryOn" : [ {
+          "code" : "RATE_LIMIT"
+        } ]
+      },
+      "reason" : "policy_allows"
+    },
+    "sequence" : 8
+  }, {
+    "attemptNumber" : 3,
+    "eventType" : "OperationDispatched",
+    "nodeId" : "call_api",
+    "operationRef" : "java:test.work:v1",
+    "sequence" : 9
+  }, {
+    "attemptNumber" : 3,
+    "eventType" : "OperationFailed",
+    "nodeId" : "call_api",
+    "operationRef" : "java:test.work:v1",
+    "payload" : {
+      "error" : {
+        "code" : "RATE_LIMIT",
+        "message" : "upstream rejected the call",
+        "retryable" : true
+      },
+      "resultState" : "failure"
+    },
+    "sequence" : 10
+  }, {
+    "eventType" : "NodeCompleted",
+    "nodeId" : "call_api",
+    "payload" : {
+      "state" : "failed"
+    },
+    "sequence" : 11
+  }, {
+    "eventType" : "EdgeSelected",
+    "nodeId" : "call_api",
+    "payload" : {
+      "condition" : {
+        "kind" : "error",
+        "match" : {
+          "code" : "RATE_LIMIT"
+        }
+      },
+      "from" : "call_api",
+      "reason" : "error_match",
+      "to" : "fallback"
+    },
+    "sequence" : 12
+  }, {
+    "eventType" : "NodeStarted",
+    "nodeId" : "fallback",
+    "payload" : {
+      "nodeKind" : "task"
+    },
+    "sequence" : 13
+  }, {
+    "attemptNumber" : 1,
+    "eventType" : "OperationDispatched",
+    "nodeId" : "fallback",
+    "operationRef" : "java:test.work:v1",
+    "sequence" : 14
+  }, {
+    "attemptNumber" : 1,
+    "eventType" : "OperationSucceeded",
+    "nodeId" : "fallback",
+    "operationRef" : "java:test.work:v1",
+    "payload" : {
+      "outputDisclosure" : {
+        "mode" : "metadata_only",
+        "reason" : "default_policy",
+        "sizeBytes" : 9,
+        "type" : "string"
+      }
+    },
+    "sequence" : 15
+  }, {
+    "eventType" : "NodeCompleted",
+    "nodeId" : "fallback",
+    "payload" : {
+      "state" : "succeeded"
+    },
+    "sequence" : 16
+  }, {
+    "eventType" : "EdgeSelected",
+    "nodeId" : "fallback",
+    "payload" : {
+      "condition" : {
+        "kind" : "always"
+      },
+      "from" : "fallback",
+      "reason" : "always",
+      "to" : "failed"
+    },
+    "sequence" : 17
+  }, {
+    "eventType" : "NodeStarted",
+    "nodeId" : "failed",
+    "payload" : {
+      "nodeKind" : "terminate"
+    },
+    "sequence" : 18
+  }, {
+    "eventType" : "NodeCompleted",
+    "nodeId" : "failed",
+    "payload" : {
+      "state" : "succeeded"
+    },
+    "sequence" : 19
+  }, {
+    "eventType" : "WorkflowFailed",
+    "payload" : {
+      "reason" : "terminate:failed",
+      "terminalState" : "failed"
+    },
+    "sequence" : 20
+  } ],
+  "spec" : "fixtures/valid/error-edge-routing.json",
+  "workflowRunId" : "golden-run-4"
+}

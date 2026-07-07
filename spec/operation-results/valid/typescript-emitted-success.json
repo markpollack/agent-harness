@@ -1,0 +1,15 @@
+{
+  "status": "success",
+  "output": {
+    "summary": "two files changed, one suggestion",
+    "score": 0.87,
+    "files": [
+      "Foo.ts",
+      "Bar.ts"
+    ]
+  },
+  "usage": {
+    "tokens": 5310,
+    "costUsd": 0.031
+  }
+}

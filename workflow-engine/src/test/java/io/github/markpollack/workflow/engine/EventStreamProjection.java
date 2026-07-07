@@ -6,12 +6,13 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * The deterministic conformance projection of an event stream (formalized at the Step
- * 2.5 freeze; shape here per review-21): {@code sequence}, {@code eventType} (wire
- * name), the node/operation/attempt envelope fields when present, and the payload —
- * excluding {@code timestamp} and {@code attributes}, and excluding the run-scoped
- * identity fields ({@code workflowRunId}, {@code workflowSpecRef}) which are constant
- * per stream and carried by the fixture document instead.
+ * The deterministic conformance projection of an event stream (normative definition in
+ * {@code spec/README.md}, frozen at Step 2.5): {@code sequence}, {@code eventType}
+ * (wire name), the node/operation/attempt envelope fields when present, and the
+ * payload — excluding {@code timestamp}, {@code attributes}, the wall-clock payload
+ * field {@code scheduledFor}, and the run-scoped identity fields
+ * ({@code workflowRunId}, {@code workflowSpecRef}) which are constant per stream and
+ * carried by the fixture document instead.
  */
 final class EventStreamProjection {
 
@@ -34,7 +35,11 @@ final class EventStreamProjection {
                 projected.put("attemptNumber", event.attemptNumber());
             }
             if (event.payload() != null) {
-                projected.put("payload", event.payload());
+                Map<String, Object> payload = new LinkedHashMap<>(event.payload());
+                payload.remove("scheduledFor");
+                if (!payload.isEmpty()) {
+                    projected.put("payload", payload);
+                }
             }
             projection.add(projected);
         }

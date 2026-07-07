@@ -1,0 +1,10 @@
+{
+  "eventType": "OperationDispatched",
+  "workflowRunId": "run-1",
+  "workflowSpecRef": "workflow://registry/pr-review@1.0.0",
+  "sequence": 3,
+  "timestamp": "2026-07-07T12:00:00Z",
+  "nodeId": "fetch_diff",
+  "operationRef": "java:github.fetch_pr_diff:v1",
+  "attemptNumber": 1
+}

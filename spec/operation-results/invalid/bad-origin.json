@@ -1,0 +1,8 @@
+{
+  "status": "failure",
+  "error": {
+    "code": "X",
+    "retryable": false,
+    "origin": "cosmic"
+  }
+}

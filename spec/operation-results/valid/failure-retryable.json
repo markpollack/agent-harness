@@ -1,0 +1,8 @@
+{
+  "status": "failure",
+  "error": {
+    "code": "RATE_LIMIT",
+    "message": "slow down",
+    "retryable": true
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "eventType": "OperationFailed",
+  "workflowRunId": "run-1",
+  "workflowSpecRef": "workflow://registry/pr-review@1.0.0",
+  "sequence": 5,
+  "timestamp": "2026-07-07T12:00:00Z",
+  "nodeId": "call_api",
+  "operationRef": "java:test.work:v1",
+  "attemptNumber": 1,
+  "payload": {
+    "resultState": "timed_out",
+    "error": {
+      "code": "OPERATION_TIMEOUT",
+      "message": "Operation exceeded 60000 ms per-attempt timeout",
+      "retryable": true
+    }
+  }
+}

@@ -231,7 +231,7 @@ class WorkflowEventFactoryTest {
         WorkflowEvent node = factory.nodeCompleted("fetch", "succeeded");
         WorkflowEvent completed = factory.workflowCompleted("completed",
                 ValueDisclosure.metadataOnly("final"));
-        WorkflowEvent failed = factory.workflowFailed("failed", "retry_exhausted");
+        WorkflowEvent failed = factory.workflowFailed("retry_exhausted");
 
         assertThat(node.payload()).containsEntry("state", "succeeded");
         assertThat(completed.payload())

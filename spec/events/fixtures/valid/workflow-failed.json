@@ -1,0 +1,11 @@
+{
+  "eventType": "WorkflowFailed",
+  "workflowRunId": "run-1",
+  "workflowSpecRef": "workflow://registry/pr-review@1.0.0",
+  "sequence": 14,
+  "timestamp": "2026-07-07T12:00:00Z",
+  "payload": {
+    "terminalState": "failed",
+    "reason": "unroutable failure: SCHEMA_DRIFT"
+  }
+}

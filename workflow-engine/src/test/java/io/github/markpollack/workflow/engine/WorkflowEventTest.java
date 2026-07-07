@@ -56,8 +56,8 @@ class WorkflowEventTest {
     }
 
     @Test
-    void allTwelveRequiredAlphaEventTypesExist() {
-        // Alpha spec §9 required list; WorkflowCancelled/WorkflowAborted arrive at 2.5.
+    void allFrozenEventTypesExist() {
+        // The frozen §9 list: twelve required types + the 2.5 terminal additions.
         assertThat(WorkflowEventType.values()).containsExactlyInAnyOrder(
                 WorkflowEventType.WORKFLOW_STARTED,
                 WorkflowEventType.NODE_STARTED,
@@ -70,6 +70,8 @@ class WorkflowEventTest {
                 WorkflowEventType.EDGE_SELECTED,
                 WorkflowEventType.NODE_COMPLETED,
                 WorkflowEventType.WORKFLOW_COMPLETED,
-                WorkflowEventType.WORKFLOW_FAILED);
+                WorkflowEventType.WORKFLOW_FAILED,
+                WorkflowEventType.WORKFLOW_CANCELLED,
+                WorkflowEventType.WORKFLOW_ABORTED);
     }
 }

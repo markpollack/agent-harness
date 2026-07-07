@@ -1,0 +1,15 @@
+{
+  "eventType": "NodeCompleted",
+  "workflowRunId": "run-1",
+  "workflowSpecRef": "workflow://registry/pr-review@1.0.0",
+  "sequence": 17,
+  "timestamp": "2026-07-07T12:00:00Z",
+  "nodeId": "route",
+  "payload": {
+    "state": "succeeded"
+  },
+  "attributes": {
+    "studio.layout.collapsed": true,
+    "acme.trace.spanId": "af31"
+  }
+}

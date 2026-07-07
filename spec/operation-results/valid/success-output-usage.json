@@ -1,0 +1,11 @@
+{
+  "status": "success",
+  "output": {
+    "summary": "one refactor",
+    "score": 0.92
+  },
+  "usage": {
+    "tokens": 1200,
+    "costUsd": 0.05
+  }
+}

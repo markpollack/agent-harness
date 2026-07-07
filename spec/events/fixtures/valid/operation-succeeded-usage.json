@@ -1,0 +1,21 @@
+{
+  "eventType": "OperationSucceeded",
+  "workflowRunId": "run-1",
+  "workflowSpecRef": "workflow://registry/pr-review@1.0.0",
+  "sequence": 4,
+  "timestamp": "2026-07-07T12:00:00Z",
+  "nodeId": "analyze_diff",
+  "operationRef": "python:review.analyze_diff:v2",
+  "attemptNumber": 1,
+  "payload": {
+    "outputDisclosure": {
+      "mode": "metadata_only",
+      "type": "object",
+      "reason": "default_policy"
+    },
+    "usage": {
+      "tokens": 1200,
+      "costUsd": 0.05
+    }
+  }
+}

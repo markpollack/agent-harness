@@ -1,0 +1,16 @@
+{
+  "eventType": "EdgeSelected",
+  "workflowRunId": "run-1",
+  "workflowSpecRef": "workflow://registry/pr-review@1.0.0",
+  "sequence": 11,
+  "timestamp": "2026-07-07T12:00:00Z",
+  "nodeId": "route",
+  "payload": {
+    "from": "route",
+    "to": "b",
+    "condition": {
+      "kind": "always"
+    },
+    "reason": "vibes"
+  }
+}

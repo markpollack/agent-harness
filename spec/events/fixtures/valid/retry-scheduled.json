@@ -1,0 +1,28 @@
+{
+  "eventType": "RetryScheduled",
+  "workflowRunId": "run-1",
+  "workflowSpecRef": "workflow://registry/pr-review@1.0.0",
+  "sequence": 6,
+  "timestamp": "2026-07-07T12:00:00Z",
+  "nodeId": "call_api",
+  "operationRef": "java:test.work:v1",
+  "attemptNumber": 1,
+  "payload": {
+    "reason": "policy_allows",
+    "delayMillis": 500,
+    "policy": {
+      "maxAttempts": 3,
+      "backoff": {
+        "strategy": "exponential",
+        "initialMillis": 500,
+        "maxMillis": 10000,
+        "multiplier": 2.0
+      },
+      "retryOn": [
+        {
+          "code": "RATE_LIMIT"
+        }
+      ]
+    }
+  }
+}

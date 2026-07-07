@@ -1,0 +1,10 @@
+{
+  "eventType": "WorkflowStarted",
+  "workflowRunId": "run-1",
+  "workflowSpecRef": "workflow://registry/x@1.0.0",
+  "sequence": 1,
+  "payload": {
+    "workflowName": "x",
+    "entrypoint": "a"
+  }
+}
