@@ -1,0 +1,89 @@
+{
+  "apiVersion": "workflow/v2alpha",
+  "kind": "Workflow",
+  "metadata": {
+    "name": "error-edge-routing",
+    "version": "1.0.0"
+  },
+  "operations": {
+    "work": {
+      "ref": "java:test.work:v1"
+    },
+    "route": {
+      "ref": "java:test.route:v1"
+    }
+  },
+  "nodes": [
+    {
+      "id": "call_api",
+      "kind": "task",
+      "operation": "work",
+      "policies": {
+        "retry": {
+          "maxAttempts": 3,
+          "backoff": {
+            "strategy": "exponential",
+            "initialMillis": 500,
+            "maxMillis": 10000,
+            "multiplier": 2.0
+          },
+          "retryOn": [
+            {
+              "code": "RATE_LIMIT"
+            }
+          ]
+        },
+        "timeout": {
+          "perAttemptMillis": 60000
+        }
+      }
+    },
+    {
+      "id": "fallback",
+      "kind": "task",
+      "operation": "work"
+    },
+    {
+      "id": "done",
+      "kind": "terminate",
+      "status": "completed"
+    },
+    {
+      "id": "failed",
+      "kind": "terminate",
+      "status": "failed"
+    }
+  ],
+  "edges": [
+    {
+      "from": "call_api",
+      "to": "done",
+      "when": {
+        "kind": "always"
+      }
+    },
+    {
+      "from": "call_api",
+      "to": "fallback",
+      "when": {
+        "kind": "error",
+        "match": {
+          "code": "RATE_LIMIT"
+        }
+      }
+    },
+    {
+      "from": "fallback",
+      "to": "failed",
+      "when": {
+        "kind": "always"
+      }
+    }
+  ],
+  "entrypoint": "call_api",
+  "policies": {
+    "retry": {
+      "maxAttempts": 1
+    }
+  }
+}

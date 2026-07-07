@@ -1,0 +1,13 @@
+{
+  "apiVersion": "workflow/v2alpha",
+  "kind": "Workflow",
+  "metadata": {"name": "duplicate-binding-target", "version": "1.0.0"},
+  "operations": {"work": {"ref": "java:test.work:v1"}},
+  "nodes": [
+    {"id": "a", "kind": "task", "operation": "work",
+     "input": {"x": {"from": "$input.first"}, "x": {"from": "$input.second"}}},
+    {"id": "end", "kind": "terminate", "status": "completed"}
+  ],
+  "edges": [{"from": "a", "to": "end", "when": {"kind": "always"}}],
+  "entrypoint": "a"
+}

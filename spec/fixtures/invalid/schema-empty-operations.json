@@ -1,0 +1,30 @@
+{
+  "apiVersion": "workflow/v2alpha",
+  "kind": "Workflow",
+  "metadata": {
+    "name": "schema-empty-operations"
+  },
+  "operations": {},
+  "nodes": [
+    {
+      "id": "a",
+      "kind": "task",
+      "operation": "work"
+    },
+    {
+      "id": "end",
+      "kind": "terminate",
+      "status": "completed"
+    }
+  ],
+  "edges": [
+    {
+      "from": "a",
+      "to": "end",
+      "when": {
+        "kind": "always"
+      }
+    }
+  ],
+  "entrypoint": "a"
+}

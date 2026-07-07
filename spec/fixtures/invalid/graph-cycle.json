@@ -1,0 +1,57 @@
+{
+  "apiVersion": "workflow/v2alpha",
+  "kind": "Workflow",
+  "metadata": {
+    "name": "graph-cycle",
+    "version": "1.0.0"
+  },
+  "operations": {
+    "work": {
+      "ref": "java:test.work:v1"
+    },
+    "route": {
+      "ref": "java:test.route:v1"
+    }
+  },
+  "nodes": [
+    {
+      "id": "a",
+      "kind": "task",
+      "operation": "work"
+    },
+    {
+      "id": "b",
+      "kind": "task",
+      "operation": "work"
+    },
+    {
+      "id": "end",
+      "kind": "terminate",
+      "status": "completed"
+    }
+  ],
+  "edges": [
+    {
+      "from": "a",
+      "to": "b",
+      "when": {
+        "kind": "always"
+      }
+    },
+    {
+      "from": "b",
+      "to": "a",
+      "when": {
+        "kind": "always"
+      }
+    },
+    {
+      "from": "b",
+      "to": "end",
+      "when": {
+        "kind": "always"
+      }
+    }
+  ],
+  "entrypoint": "a"
+}

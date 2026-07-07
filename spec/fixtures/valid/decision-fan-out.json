@@ -1,0 +1,113 @@
+{
+  "apiVersion": "workflow/v2alpha",
+  "kind": "Workflow",
+  "metadata": {
+    "name": "decision-fan-out",
+    "version": "1.0.0"
+  },
+  "operations": {
+    "work": {
+      "ref": "java:test.work:v1"
+    },
+    "route": {
+      "ref": "java:test.route:v1"
+    }
+  },
+  "nodes": [
+    {
+      "id": "prepare",
+      "kind": "task",
+      "operation": "work"
+    },
+    {
+      "id": "route_work",
+      "kind": "decision",
+      "operation": "route",
+      "outcomes": [
+        "small",
+        "medium",
+        "large"
+      ],
+      "input": {
+        "item": {
+          "from": "$node.prepare.output"
+        }
+      }
+    },
+    {
+      "id": "handle_small",
+      "kind": "task",
+      "operation": "work"
+    },
+    {
+      "id": "handle_medium",
+      "kind": "task",
+      "operation": "work"
+    },
+    {
+      "id": "handle_large",
+      "kind": "task",
+      "operation": "work"
+    },
+    {
+      "id": "done",
+      "kind": "terminate",
+      "status": "completed"
+    }
+  ],
+  "edges": [
+    {
+      "from": "prepare",
+      "to": "route_work",
+      "when": {
+        "kind": "always"
+      }
+    },
+    {
+      "from": "route_work",
+      "to": "handle_small",
+      "when": {
+        "kind": "decisionResult",
+        "value": "small"
+      }
+    },
+    {
+      "from": "route_work",
+      "to": "handle_medium",
+      "when": {
+        "kind": "decisionResult",
+        "value": "medium"
+      }
+    },
+    {
+      "from": "route_work",
+      "to": "handle_large",
+      "when": {
+        "kind": "decisionResult",
+        "value": "large"
+      }
+    },
+    {
+      "from": "handle_small",
+      "to": "done",
+      "when": {
+        "kind": "always"
+      }
+    },
+    {
+      "from": "handle_medium",
+      "to": "done",
+      "when": {
+        "kind": "always"
+      }
+    },
+    {
+      "from": "handle_large",
+      "to": "done",
+      "when": {
+        "kind": "always"
+      }
+    }
+  ],
+  "entrypoint": "prepare"
+}

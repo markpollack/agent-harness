@@ -1,0 +1,38 @@
+{
+  "apiVersion": "workflow/v2alpha",
+  "kind": "Workflow",
+  "metadata": {
+    "name": "schema-decision-missing-outcomes",
+    "version": "1.0.0"
+  },
+  "operations": {
+    "work": {
+      "ref": "java:test.work:v1"
+    },
+    "route": {
+      "ref": "java:test.route:v1"
+    }
+  },
+  "nodes": [
+    {
+      "id": "d",
+      "kind": "decision",
+      "operation": "route"
+    },
+    {
+      "id": "end",
+      "kind": "terminate",
+      "status": "completed"
+    }
+  ],
+  "edges": [
+    {
+      "from": "d",
+      "to": "end",
+      "when": {
+        "kind": "always"
+      }
+    }
+  ],
+  "entrypoint": "d"
+}

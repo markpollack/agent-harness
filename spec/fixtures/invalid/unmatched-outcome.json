@@ -1,0 +1,55 @@
+{
+  "apiVersion": "workflow/v2alpha",
+  "kind": "Workflow",
+  "metadata": {
+    "name": "unmatched-outcome",
+    "version": "1.0.0"
+  },
+  "operations": {
+    "work": {
+      "ref": "java:test.work:v1"
+    },
+    "route": {
+      "ref": "java:test.route:v1"
+    }
+  },
+  "nodes": [
+    {
+      "id": "d",
+      "kind": "decision",
+      "operation": "route",
+      "outcomes": [
+        "a",
+        "b"
+      ]
+    },
+    {
+      "id": "t",
+      "kind": "task",
+      "operation": "work"
+    },
+    {
+      "id": "end",
+      "kind": "terminate",
+      "status": "completed"
+    }
+  ],
+  "edges": [
+    {
+      "from": "d",
+      "to": "t",
+      "when": {
+        "kind": "decisionResult",
+        "value": "a"
+      }
+    },
+    {
+      "from": "t",
+      "to": "end",
+      "when": {
+        "kind": "always"
+      }
+    }
+  ],
+  "entrypoint": "d"
+}

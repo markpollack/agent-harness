@@ -1,0 +1,68 @@
+{
+  "apiVersion": "workflow/v2alpha",
+  "kind": "Workflow",
+  "metadata": {
+    "name": "constants-outputs",
+    "version": "1.0.0"
+  },
+  "operations": {
+    "work": {
+      "ref": "java:test.work:v1"
+    },
+    "route": {
+      "ref": "java:test.route:v1"
+    }
+  },
+  "nodes": [
+    {
+      "id": "score",
+      "kind": "task",
+      "operation": "work",
+      "input": {
+        "threshold": {
+          "from": "$const.threshold"
+        },
+        "weights": {
+          "from": "$const.weights"
+        }
+      }
+    },
+    {
+      "id": "done",
+      "kind": "terminate",
+      "status": "completed",
+      "result": {
+        "from": "$node.score.output"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "score",
+      "to": "done",
+      "when": {
+        "kind": "always"
+      }
+    }
+  ],
+  "entrypoint": "score",
+  "constants": {
+    "threshold": 0.75,
+    "weights": {
+      "clarity": 2,
+      "accuracy": 3
+    },
+    "labels": [
+      "a",
+      "b"
+    ]
+  },
+  "outputs": {
+    "score": {
+      "from": "$node.score.output"
+    },
+    "threshold_used": {
+      "from": "$const.threshold"
+    }
+  }
+}

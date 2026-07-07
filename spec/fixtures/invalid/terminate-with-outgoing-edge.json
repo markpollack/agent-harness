@@ -1,0 +1,50 @@
+{
+  "apiVersion": "workflow/v2alpha",
+  "kind": "Workflow",
+  "metadata": {
+    "name": "terminate-with-outgoing-edge",
+    "version": "1.0.0"
+  },
+  "operations": {
+    "work": {
+      "ref": "java:test.work:v1"
+    },
+    "route": {
+      "ref": "java:test.route:v1"
+    }
+  },
+  "nodes": [
+    {
+      "id": "a",
+      "kind": "task",
+      "operation": "work"
+    },
+    {
+      "id": "end",
+      "kind": "terminate",
+      "status": "completed"
+    },
+    {
+      "id": "b",
+      "kind": "task",
+      "operation": "work"
+    }
+  ],
+  "edges": [
+    {
+      "from": "a",
+      "to": "end",
+      "when": {
+        "kind": "always"
+      }
+    },
+    {
+      "from": "end",
+      "to": "b",
+      "when": {
+        "kind": "always"
+      }
+    }
+  ],
+  "entrypoint": "a"
+}

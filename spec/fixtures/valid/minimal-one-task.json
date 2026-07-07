@@ -1,0 +1,41 @@
+{
+  "apiVersion": "workflow/v2alpha",
+  "kind": "Workflow",
+  "metadata": {
+    "name": "minimal-one-task",
+    "version": "1.0.0"
+  },
+  "operations": {
+    "work": {
+      "ref": "java:test.work:v1"
+    },
+    "route": {
+      "ref": "java:test.route:v1"
+    }
+  },
+  "nodes": [
+    {
+      "id": "do",
+      "kind": "task",
+      "operation": "work"
+    },
+    {
+      "id": "done",
+      "kind": "terminate",
+      "status": "completed",
+      "result": {
+        "from": "$node.do.output"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "do",
+      "to": "done",
+      "when": {
+        "kind": "always"
+      }
+    }
+  ],
+  "entrypoint": "do"
+}

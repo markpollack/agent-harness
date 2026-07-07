@@ -1,0 +1,38 @@
+{
+  "apiVersion": "workflow/v2alpha",
+  "kind": "Workflow",
+  "metadata": {
+    "name": "schema-unknown-node-kind",
+    "version": "1.0.0"
+  },
+  "operations": {
+    "work": {
+      "ref": "java:test.work:v1"
+    },
+    "route": {
+      "ref": "java:test.route:v1"
+    }
+  },
+  "nodes": [
+    {
+      "id": "g",
+      "kind": "gateway",
+      "operation": "work"
+    },
+    {
+      "id": "end",
+      "kind": "terminate",
+      "status": "completed"
+    }
+  ],
+  "edges": [
+    {
+      "from": "g",
+      "to": "end",
+      "when": {
+        "kind": "always"
+      }
+    }
+  ],
+  "entrypoint": "g"
+}

@@ -1,0 +1,52 @@
+{
+  "apiVersion": "workflow/v2alpha",
+  "kind": "Workflow",
+  "metadata": {
+    "name": "annotations",
+    "version": "1.0.0",
+    "labels": {
+      "team": "platform"
+    },
+    "annotations": {
+      "editor.example.io/theme": "dark",
+      "docs.example.io/owner": "mark"
+    }
+  },
+  "operations": {
+    "work": {
+      "ref": "java:test.work:v1"
+    },
+    "route": {
+      "ref": "java:test.route:v1"
+    }
+  },
+  "nodes": [
+    {
+      "id": "styled",
+      "kind": "task",
+      "operation": "work",
+      "annotations": {
+        "editor.example.io/position": "{\"x\":120,\"y\":80}",
+        "editor.example.io/collapsed": "false"
+      }
+    },
+    {
+      "id": "done",
+      "kind": "terminate",
+      "status": "completed",
+      "annotations": {
+        "editor.example.io/position": "{\"x\":320,\"y\":80}"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "styled",
+      "to": "done",
+      "when": {
+        "kind": "always"
+      }
+    }
+  ],
+  "entrypoint": "styled"
+}

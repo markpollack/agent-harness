@@ -1,0 +1,71 @@
+{
+  "apiVersion": "workflow/v2alpha",
+  "kind": "Workflow",
+  "metadata": {
+    "name": "context-writes",
+    "version": "1.0.0"
+  },
+  "operations": {
+    "work": {
+      "ref": "java:test.work:v1"
+    },
+    "route": {
+      "ref": "java:test.route:v1"
+    }
+  },
+  "nodes": [
+    {
+      "id": "fetch",
+      "kind": "task",
+      "operation": "work",
+      "input": {
+        "url": {
+          "from": "$input.url"
+        }
+      },
+      "contextWrites": {
+        "doc.body": {
+          "from": "$node.fetch.output"
+        },
+        "doc.source": {
+          "from": "$input.url"
+        }
+      }
+    },
+    {
+      "id": "summarize",
+      "kind": "task",
+      "operation": "work",
+      "input": {
+        "body": {
+          "from": "$context.doc.body"
+        }
+      }
+    },
+    {
+      "id": "done",
+      "kind": "terminate",
+      "status": "completed",
+      "result": {
+        "from": "$node.summarize.output"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "fetch",
+      "to": "summarize",
+      "when": {
+        "kind": "always"
+      }
+    },
+    {
+      "from": "summarize",
+      "to": "done",
+      "when": {
+        "kind": "always"
+      }
+    }
+  ],
+  "entrypoint": "fetch"
+}

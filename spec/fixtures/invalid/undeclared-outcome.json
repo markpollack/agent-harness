@@ -1,0 +1,95 @@
+{
+  "apiVersion": "workflow/v2alpha",
+  "kind": "Workflow",
+  "metadata": {
+    "name": "undeclared-outcome",
+    "version": "1.0.0"
+  },
+  "operations": {
+    "work": {
+      "ref": "java:test.work:v1"
+    },
+    "route": {
+      "ref": "java:test.route:v1"
+    }
+  },
+  "nodes": [
+    {
+      "id": "d",
+      "kind": "decision",
+      "operation": "route",
+      "outcomes": [
+        "a",
+        "b"
+      ]
+    },
+    {
+      "id": "t1",
+      "kind": "task",
+      "operation": "work"
+    },
+    {
+      "id": "t2",
+      "kind": "task",
+      "operation": "work"
+    },
+    {
+      "id": "t3",
+      "kind": "task",
+      "operation": "work"
+    },
+    {
+      "id": "end",
+      "kind": "terminate",
+      "status": "completed"
+    }
+  ],
+  "edges": [
+    {
+      "from": "d",
+      "to": "t1",
+      "when": {
+        "kind": "decisionResult",
+        "value": "a"
+      }
+    },
+    {
+      "from": "d",
+      "to": "t2",
+      "when": {
+        "kind": "decisionResult",
+        "value": "b"
+      }
+    },
+    {
+      "from": "d",
+      "to": "t3",
+      "when": {
+        "kind": "decisionResult",
+        "value": "c"
+      }
+    },
+    {
+      "from": "t1",
+      "to": "end",
+      "when": {
+        "kind": "always"
+      }
+    },
+    {
+      "from": "t2",
+      "to": "end",
+      "when": {
+        "kind": "always"
+      }
+    },
+    {
+      "from": "t3",
+      "to": "end",
+      "when": {
+        "kind": "always"
+      }
+    }
+  ],
+  "entrypoint": "d"
+}
