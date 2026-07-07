@@ -33,6 +33,10 @@ public final class WorkflowEventFactory {
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {
     };
 
+    /** The frozen §9 NodeCompleted state vocabulary. */
+    private static final java.util.Set<String> NODE_STATES =
+            java.util.Set.of("succeeded", "failed", "cancelled", "aborted");
+
     private final String workflowRunId;
     private final String workflowSpecRef;
     private final Clock clock;
@@ -195,8 +199,12 @@ public final class WorkflowEventFactory {
     }
 
     public WorkflowEvent nodeCompleted(String nodeId, String state) {
+        Objects.requireNonNull(state, "state");
+        if (!NODE_STATES.contains(state)) {
+            throw new IllegalArgumentException("node state must be one of " + NODE_STATES + ": " + state);
+        }
         Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("state", Objects.requireNonNull(state, "state"));
+        payload.put("state", state);
         return event(WorkflowEventType.NODE_COMPLETED, requireNodeId(nodeId), null, null, payload);
     }
 

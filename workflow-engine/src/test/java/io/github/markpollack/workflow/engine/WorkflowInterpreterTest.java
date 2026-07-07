@@ -400,6 +400,97 @@ class WorkflowInterpreterTest {
         assertThat(outcome.reason()).isEqualTo("user_stop");
         assertThat(eventTypes()).doesNotContain(
                 WorkflowEventType.OPERATION_FAILED, WorkflowEventType.EDGE_SELECTED);
+        // NodeCompleted.state mirrors the terminal event type (§9)
+        assertThat(sink.events())
+                .filteredOn(e -> e.eventType() == WorkflowEventType.NODE_COMPLETED)
+                .singleElement()
+                .satisfies(e -> assertThat(e.payload()).containsEntry("state", "cancelled"));
+        assertThat(eventTypes()).endsWith(WorkflowEventType.WORKFLOW_CANCELLED);
+    }
+
+    @Test
+    void throwingErrorNotJustExceptionIsSurvived() {
+        WorkflowSpec spec = spec(
+                Map.of("work", op("java:test.assert:v1")),
+                List.of(task("do", "work", null), terminate("done", TerminateStatus.COMPLETED)),
+                List.of(always("do", "done")),
+                "do");
+        SimpleOperationRegistry registry = new SimpleOperationRegistry()
+                .register("java:test.assert:v1", (inv, ctx, in) -> {
+                    throw new AssertionError("invariant blown");
+                });
+
+        WorkflowRunOutcome outcome = new WorkflowInterpreter(registry, sink).run(spec, "run-1", null);
+
+        // same conformant stream as an Exception-throwing handler: normalized, terminal event emitted
+        assertThat(outcome.terminalState()).isEqualTo("failed");
+        assertThat(sink.events())
+                .filteredOn(e -> e.eventType() == WorkflowEventType.OPERATION_FAILED)
+                .singleElement()
+                .satisfies(e -> {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> error = (Map<String, Object>) e.payload().get("error");
+                    assertThat(error).containsEntry("code", "UNHANDLED_EXCEPTION");
+                });
+        assertThat(eventTypes()).endsWith(WorkflowEventType.WORKFLOW_FAILED);
+    }
+
+    @Test
+    void blankCancellationReasonIsUnrepresentableAndNormalized() {
+        WorkflowSpec spec = spec(
+                Map.of("work", op("java:test.badcancel:v1")),
+                List.of(task("do", "work", null), terminate("done", TerminateStatus.COMPLETED)),
+                List.of(always("do", "done")),
+                "do");
+        SimpleOperationRegistry registry = new SimpleOperationRegistry()
+                .register("java:test.badcancel:v1",
+                        (inv, ctx, in) -> OperationResult.cancelled(" "));
+
+        WorkflowRunOutcome outcome = new WorkflowInterpreter(registry, sink).run(spec, "run-1", null);
+
+        // the record constructor throws in the handler's frame; the boundary normalizes it —
+        // the run still ends with a terminal event instead of a mid-stream crash
+        assertThat(outcome.terminalState()).isEqualTo("failed");
+        assertThat(sink.events())
+                .filteredOn(e -> e.eventType() == WorkflowEventType.OPERATION_FAILED)
+                .singleElement()
+                .satisfies(e -> {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> error = (Map<String, Object>) e.payload().get("error");
+                    assertThat(error).containsEntry("code", "UNHANDLED_EXCEPTION");
+                });
+        assertThat(eventTypes()).endsWith(WorkflowEventType.WORKFLOW_FAILED);
+    }
+
+    @Test
+    void workflowOutputsBindingFailureFailsAfterTerminateNodeSucceeds() {
+        TaskSpecNode work = task("do", "work", null);
+        TerminateSpecNode done = terminate("done", TerminateStatus.COMPLETED);
+        WorkflowSpec spec = new WorkflowSpec(WorkflowSpec.API_VERSION, WorkflowSpec.KIND,
+                new WorkflowMetadata("test-flow", "1.0.0", null, null),
+                null, null, null,
+                Map.of("work", op("java:test.work:v1")),
+                List.of(work, done),
+                List.of(always("do", "done")),
+                null, "do",
+                Map.of("result", new Binding("$context.never-written")));
+        SimpleOperationRegistry registry = new SimpleOperationRegistry()
+                .register("java:test.work:v1", (inv, ctx, in) -> OperationResult.success("out"));
+
+        WorkflowRunOutcome outcome = new WorkflowInterpreter(registry, sink).run(spec, "run-1", null);
+
+        assertThat(outcome.terminalState()).isEqualTo("failed");
+        assertThat(outcome.reason()).isEqualTo("missing source path: $context.never-written");
+        // the terminate node itself succeeded; the outputs evaluation failed afterwards
+        assertThat(eventTypes()).endsWith(
+                WorkflowEventType.NODE_COMPLETED,
+                WorkflowEventType.BINDING_EVALUATED,
+                WorkflowEventType.WORKFLOW_FAILED);
+        assertThat(sink.events())
+                .filteredOn(e -> e.eventType() == WorkflowEventType.NODE_COMPLETED)
+                .filteredOn(e -> "done".equals(e.nodeId()))
+                .singleElement()
+                .satisfies(e -> assertThat(e.payload()).containsEntry("state", "succeeded"));
     }
 
     @Test

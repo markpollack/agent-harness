@@ -62,11 +62,21 @@ public final class RetryDecider {
         return policy.retryOn().stream().map(ErrorMatcher::code).anyMatch(c -> c.equals(code));
     }
 
+    /** 2^53 − 1: the schema bound on every millis field — delays never exceed it. */
+    private static final long MAX_SAFE_MILLIS = 9007199254740991L;
+
     /**
      * Closed-form delay for the completed attempt (§4 Policies): absent backoff →
      * immediate re-dispatch; {@code fixed} → {@code initialMillis}; {@code exponential}
-     * → {@code min(round(initialMillis * multiplier^(attemptNumber-1)), maxMillis)},
-     * uncapped when {@code maxMillis} is absent.
+     * → {@code min(round(initialMillis * multiplier^(attemptNumber-1)), maxMillis,
+     * 2^53−1)}.
+     *
+     * <p>{@code delayMillis} is inside the deterministic conformance projection, so
+     * the arithmetic is pinned cross-SDK (§4): the power is computed by repeated
+     * IEEE-754 double multiplication (never a transcendental {@code pow} — 1-ulp
+     * library divergence would break golden-stream byte equality) and {@code round}
+     * is half-away-from-zero ({@code floor(x + 0.5)} — Python's half-even
+     * {@code round()} must not be used).
      */
     static long delayFor(BackoffSpec backoff, int attemptNumber) {
         if (backoff == null) {
@@ -75,10 +85,15 @@ public final class RetryDecider {
         return switch (backoff.strategy()) {
             case FIXED -> backoff.initialMillis();
             case EXPONENTIAL -> {
-                double raw = backoff.initialMillis()
-                        * Math.pow(backoff.multiplier(), attemptNumber - 1L);
-                long delay = Math.round(raw);
-                yield backoff.maxMillis() != null ? Math.min(delay, backoff.maxMillis()) : delay;
+                double raw = backoff.initialMillis();
+                for (int i = 1; i < attemptNumber; i++) {
+                    raw *= backoff.multiplier();
+                }
+                long delay = (long) Math.floor(raw + 0.5d);
+                long cap = backoff.maxMillis() != null
+                        ? Math.min(backoff.maxMillis(), MAX_SAFE_MILLIS)
+                        : MAX_SAFE_MILLIS;
+                yield Math.min(delay, cap);
             }
         };
     }

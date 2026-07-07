@@ -1,0 +1,17 @@
+{
+  "eventType": "BindingEvaluated",
+  "workflowRunId": "run-1",
+  "workflowSpecRef": "workflow://registry/pr-review@1.0.0",
+  "sequence": 3,
+  "timestamp": "2026-07-07T12:00:00Z",
+  "nodeId": "fetch_diff",
+  "payload": {
+    "bindingTarget": "url",
+    "source": "$input.url",
+    "status": "failure",
+    "valueDisclosure": {
+      "mode": "metadata_only",
+      "type": "string"
+    }
+  }
+}

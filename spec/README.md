@@ -175,10 +175,13 @@ the projection document, never host-language tree equality.
 **Golden streams** (`events/*.events.json`): `golden-pr-review` (success path, includes
 a usage-bearing OperationSucceeded), `golden-pr-review-fail-path` (decision routing to
 the failed terminate), `golden-pr-review-binding-failure`, `error-edge-routing` (three
-attempts, two retries, error-edge recovery), `retry-exhaustion-unroutable`. A conforming
+attempts, two retries, error-edge recovery), `retry-exhaustion-unroutable`, and
+`operation-cancelled` (NodeCompleted state mirrors the terminal event type). A conforming
 interpreter given the named spec fixture, the pinned `workflowRunId`, the documented
 deterministic handler outputs, and the documented input MUST reproduce each stream's
-projection byte-for-byte.
+projection byte-for-byte. Golden conformance runs with `executorId` unset — it is
+environment identity and participates in the projection when present, so conformance
+runners must not set one.
 
 **Golden-stream update rule**: any event change — a payload key, an ordering rule, a
 vocabulary value — changes golden streams and is therefore a cross-SDK conformance
@@ -199,12 +202,14 @@ beyond the per-node subsequences; parallel execution (post-alpha) will interleav
   fixture corpus — zero known discrepancies at freeze time; the corpus test suite is
   the executable proof.
 - **Event contract** (`events/`, `operation-result.schema.json`, Event Contract section
-  above): **FROZEN 2026-07-07** (core Step 2.5). Reconciled artifacts: alpha spec doc
-  §§6, 8–11 (2026-07-07 revision), both wire-projection schemas, the engine event
-  model/factory/interpreter, five golden event streams, and the wire-fixture corpora
-  (operation-results: 9 valid incl. 2 cross-language-emitted / 9 invalid; events: 17
-  valid / 12 invalid) — zero known discrepancies at freeze time;
-  `WireSchemaConformanceTest` + `GoldenEventStreamTest` are the executable proof. The
-  cross-language envelope smoke test (R7) passes: `tools/emit_operation_result.py` and
-  `tools/emit-operation-result.mjs` outputs schema-validate and round-trip through the
-  Java codec to canonical byte equality.
+  above): **FROZEN 2026-07-07** (core Step 2.5; QA-hardened same day at Step 2.K).
+  Reconciled artifacts: alpha spec doc §§6, 8–11 (2026-07-07 revision), both
+  wire-projection schemas, the engine event model/factory/interpreter, six golden event
+  streams, and the wire-fixture corpora (operation-results: 13 valid incl. 2
+  cross-language-emitted / 9 invalid; events: 17 valid / 13 invalid) — zero known
+  discrepancies at freeze time; `WireSchemaConformanceTest` + `GoldenEventStreamTest` +
+  `LiveEventEnvelopeConformanceTest` (every live interpreter envelope on every path,
+  golden-covered or not, validates against the event schema) are the executable proof.
+  The cross-language envelope smoke test (R7) passes: `tools/emit_operation_result.py`
+  and `tools/emit-operation-result.mjs` outputs schema-validate and round-trip through
+  the Java codec to canonical byte equality.

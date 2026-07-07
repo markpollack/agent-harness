@@ -38,11 +38,13 @@ public final class BindingEvaluator {
     private final Map<String, String> nodeDecisions = new HashMap<>();
 
     /**
-     * @param workflowInput the run's input; may be null (a workflow may take none)
+     * @param workflowInput the run's input; may be null (a workflow may take none) —
+     *                      a JSON {@code null}/missing node normalizes to absent
      * @param constants     the spec's {@code constants} section; may be null
      */
     public BindingEvaluator(Object workflowInput, JsonNode constants) {
-        this.workflowInput = workflowInput;
+        this.workflowInput = workflowInput instanceof JsonNode node
+                && (node.isNull() || node.isMissingNode()) ? null : workflowInput;
         this.constants = constants;
     }
 

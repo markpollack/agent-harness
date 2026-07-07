@@ -277,6 +277,10 @@ public final class WorkflowInterpreter {
             } catch (UnknownOperationException ex) {
                 return new AttemptOutcome(null,
                         failWorkflow(nodeId, "aborted", "unknown operation: " + ex.operationRef()));
+            } catch (RuntimeException ex) {
+                // a custom registry that throws must not kill the run without a terminal event
+                return new AttemptOutcome(null, failWorkflow(nodeId, "aborted",
+                        "operation resolution failed: " + ref));
             }
             RetryPolicySpec retryPolicy = effective(nodePolicies, declaration.defaultPolicies(),
                     spec.policies(), PolicyBundle::retry);
@@ -325,7 +329,13 @@ public final class WorkflowInterpreter {
             }
         }
 
-        /** One attempt behind the §19 defensive boundary, with the per-attempt timeout applied. */
+        /**
+         * One attempt behind the §19 defensive boundary, with the per-attempt timeout
+         * applied. On expiry the worker thread is interrupted best-effort but never
+         * joined — a non-cooperative handler may keep running concurrently with the
+         * next attempt (documented alpha in-memory semantics; the Operation Contract's
+         * idempotency obligation covers it; durable interpreters revisit at 3.2).
+         */
         private OperationResult executeAttempt(OperationHandler handler, OperationInvocation invocation,
                 Object input, TimeoutPolicySpec timeout) {
             if (timeout == null) {
@@ -345,9 +355,10 @@ public final class WorkflowInterpreter {
                         true));
             } catch (InterruptedException ex) {
                 Thread.currentThread().interrupt();
+                worker.interrupt();
                 return OperationResult.aborted("interpreter interrupted during attempt");
             } catch (ExecutionException ex) {
-                // unreachable in practice: guarded() never throws — but stay defensive
+                // guarded() catches Throwable, so this is belt-and-braces only
                 return unhandled(ex.getCause() != null ? ex.getCause() : ex);
             }
         }
@@ -359,7 +370,10 @@ public final class WorkflowInterpreter {
                 return result != null ? result
                         : OperationResult.failure(new ErrorEnvelope("UNHANDLED_EXCEPTION",
                                 "operation handler returned null", false, ErrorEnvelope.ORIGIN_CODE, null));
-            } catch (Exception ex) {
+            } catch (Throwable ex) {
+                // Throwable, not Exception: §19 says one misbehaving handler must not
+                // bypass event emission — an AssertionError must produce the same
+                // conformant stream on the timeout and non-timeout paths alike.
                 return unhandled(ex);
             }
         }
@@ -499,9 +513,13 @@ public final class WorkflowInterpreter {
             return endWorkflow("failed", detail, null);
         }
 
-        /** Node-level failure: NodeCompleted(failed) then workflow termination. */
+        /**
+         * Node-level termination: NodeCompleted whose state mirrors how the node ended
+         * ({@code failed}, or {@code cancelled}/{@code aborted} when the run ends that
+         * way mid-node — §9), then the matching workflow terminal event.
+         */
         private Flow failWorkflow(String nodeId, String terminalState, String reason) {
-            sink.emit(events.nodeCompleted(nodeId, "failed"));
+            sink.emit(events.nodeCompleted(nodeId, terminalState));
             return endWorkflow(terminalState, reason, null);
         }
 

@@ -130,6 +130,10 @@ public sealed interface OperationResult
 
     /** External or controller-driven intentional stop; terminates the workflow (§7). */
     record Cancelled(String reason) implements OperationResult {
+        public Cancelled {
+            reason = requireReason(reason);
+        }
+
         @Override
         public OperationStatus status() {
             return OperationStatus.CANCELLED;
@@ -138,9 +142,27 @@ public sealed interface OperationResult
 
     /** Interpreter or runtime could not safely continue; terminates immediately (§7). */
     record Aborted(String reason) implements OperationResult {
+        public Aborted {
+            reason = requireReason(reason);
+        }
+
         @Override
         public OperationStatus status() {
             return OperationStatus.ABORTED;
         }
+    }
+
+    /**
+     * Terminal events carry {@code reason} with {@code minLength: 1} on the wire — a
+     * null/blank reason here would either NPE mid-stream or emit a schema-invalid
+     * terminal event, so it is unrepresentable (a handler constructing one throws in
+     * its own frame and the defensive boundary normalizes it).
+     */
+    private static String requireReason(String reason) {
+        Objects.requireNonNull(reason, "reason");
+        if (reason.isBlank()) {
+            throw new IllegalArgumentException("reason must not be blank");
+        }
+        return reason;
     }
 }

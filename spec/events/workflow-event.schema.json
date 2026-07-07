@@ -156,7 +156,17 @@
               "source": { "type": "string", "minLength": 1 },
               "status": { "enum": ["success", "failure"] },
               "valueDisclosure": { "$ref": "#/$defs/valueDisclosure" }
-            }
+            },
+            "allOf": [
+              {
+                "$comment": "A failed binding has no value to disclose (section 9).",
+                "if": {
+                  "properties": { "status": { "const": "failure" } },
+                  "required": ["status"]
+                },
+                "then": { "properties": { "valueDisclosure": false } }
+              }
+            ]
           }
         }
       }

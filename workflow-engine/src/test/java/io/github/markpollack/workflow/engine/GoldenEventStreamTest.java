@@ -53,7 +53,12 @@ class GoldenEventStreamTest {
                 new Scenario("error-edge-routing", routingSpec, "golden-run-4", null,
                         routingRegistry("RATE_LIMIT"), "failed"),
                 new Scenario("retry-exhaustion-unroutable", routingSpec, "golden-run-5", null,
-                        routingRegistry("SCHEMA_DRIFT"), "failed"));
+                        routingRegistry("SCHEMA_DRIFT"), "failed"),
+                new Scenario("operation-cancelled", "fixtures/valid/minimal-one-task.json",
+                        "golden-run-6", null,
+                        new SimpleOperationRegistry().register("java:test.work:v1",
+                                (inv, ctx, in) -> OperationResult.cancelled("user_stop")),
+                        "cancelled"));
     }
 
     @TestFactory
