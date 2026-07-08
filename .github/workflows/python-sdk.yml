@@ -1,0 +1,25 @@
+name: Python SDK
+
+on:
+  push:
+    branches: [main]
+    paths: ['sdks/python/**', 'spec/**']
+  pull_request:
+    branches: [main]
+    paths: ['sdks/python/**', 'spec/**']
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdks/python
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy
+      - run: uv run pytest
