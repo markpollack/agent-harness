@@ -31,11 +31,30 @@ def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return obj
 
 
+def _reject_non_finite(literal: str) -> Any:
+    # Python's json module accepts NaN/Infinity by default; they are not valid JSON
+    # (RFC 8259) and are outside the JCS number domain — reject at parse, never crash
+    # later at canonical emission.
+    raise WorkflowValidationError(
+        [
+            ValidationError(
+                code="SCHEMA_INVALID",
+                path="$",
+                message=f"non-finite number literal is not valid JSON: {literal}",
+            )
+        ]
+    )
+
+
 def parse_strict(source: str | bytes) -> Any:
-    """Parses JSON with duplicate-key rejection; raises WorkflowValidationError."""
+    """Parses JSON strictly: duplicate keys and non-finite literals are rejected."""
     text = source.decode("utf-8") if isinstance(source, bytes) else source
     try:
-        return json.loads(text, object_pairs_hook=_reject_duplicate_keys)
+        return json.loads(
+            text,
+            object_pairs_hook=_reject_duplicate_keys,
+            parse_constant=_reject_non_finite,
+        )
     except WorkflowValidationError:
         raise
     except json.JSONDecodeError as ex:

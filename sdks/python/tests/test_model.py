@@ -104,3 +104,15 @@ class TestStrictParsing:
         with pytest.raises(WorkflowValidationError) as raised:
             load("{not json")
         assert raised.value.errors[0].code == "SCHEMA_INVALID"
+
+    @pytest.mark.parametrize("literal", ["NaN", "Infinity", "-Infinity"])
+    def test_non_finite_literals_are_rejected_at_parse(self, literal: str) -> None:
+        # not valid JSON (RFC 8259) and outside the JCS number domain: reject
+        # structuredly at parse, never crash later at canonical emission
+        from agent_workflow import WorkflowValidationError
+
+        doc = f'{{"apiVersion": "workflow/v2alpha", "constants": {{"x": {literal}}}}}'
+        with pytest.raises(WorkflowValidationError) as raised:
+            load(doc)
+        assert raised.value.errors[0].code == "SCHEMA_INVALID"
+        assert "non-finite" in raised.value.errors[0].message
