@@ -64,7 +64,13 @@ public class JpaCheckpointStore implements CheckpointStore {
         WorkflowRunEntity run = em.find(WorkflowRunEntity.class, workflowRunId);
         if (run == null) {
             em.persist(new WorkflowRunEntity(workflowRunId, workflowSpecRef, canonicalSpecHash));
-            flush();
+            try {
+                flush();
+            } catch (PersistenceException ex) {
+                // two runners racing the first open: the loser is a conflict, not a crash
+                throw new CheckpointConflictException(
+                        "concurrent openRun for '" + workflowRunId + "'", ex);
+            }
             return new RunState(false, 0, List.of(), Optional.empty());
         }
         if (TERMINAL.contains(run.status())) {
@@ -110,7 +116,11 @@ public class JpaCheckpointStore implements CheckpointStore {
         row.attemptNumber(dispatch.attemptNumber());
         row.retryDelayMillis(null);
         row.scheduledFor(dispatch.scheduledFor());
-        row.externalRef(dispatch.externalRef());
+        if (dispatch.externalRef() != null) {
+            // never null out an existing handle: the recovery slot survives attempt
+            // increments (DESIGN § Operation Contract)
+            row.externalRef(dispatch.externalRef());
+        }
         row.lastEventSequence(run.lastEventSequence());
         persistIfNew(row);
         flush();

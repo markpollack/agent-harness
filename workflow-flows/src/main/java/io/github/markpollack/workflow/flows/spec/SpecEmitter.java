@@ -24,6 +24,7 @@ import io.github.markpollack.workflow.spec.WorkflowMetadata;
 import io.github.markpollack.workflow.spec.WorkflowSpec;
 import io.github.markpollack.workflow.spec.WorkflowSpecNode;
 import io.github.markpollack.workflow.spec.WorkflowSpecValidator;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
@@ -43,12 +44,12 @@ import java.util.Set;
  *
  * <h2>The portability ladder (DD-21 — documented DX, not policy)</h2>
  * <ol>
- *   <li><b>Inline lambda</b> — swallowed as-is; ref derived from workflow + step name
- *       ({@code java:<workflow>.<step>:v1}), positional fallback ({@code step-<i>},
- *       {@code branch-<i>}, {@code decision-<i>}) only for truly anonymous logic.
- *       Topology fully portable; this operation's meaning is opaque outside this JVM.</li>
- *   <li><b>Named step</b> ({@code Step.named}, method reference) — readable derived
- *       ref, free.</li>
+ *   <li><b>Anonymous logic</b> (raw lambdas, method references — their class names are
+ *       JVM-synthetic and unstable) — swallowed as-is with positional fallback names
+ *       ({@code step-<i>}, {@code branch-<i>}, {@code decision-<i>}). Topology fully
+ *       portable; this operation's meaning is opaque outside this JVM.</li>
+ *   <li><b>Named step</b> ({@code Step.named(...)}, any {@code name()}-bearing Step) —
+ *       readable structure-derived ref ({@code java:<workflow>.<step>:v1}), free.</li>
  *   <li><b>Explicit ref</b> ({@link SpecEmitterOptions.NodeCustomization#operation}) —
  *       catalog-visible, fully portable, reusable from Python/TS/visual authors.</li>
  * </ol>
@@ -87,12 +88,23 @@ import java.util.Set;
  * </ul>
  *
  * <h2>Not expressible in v2-alpha</h2>
- * {@code parallel}/{@code gather} (incl. dynamic fan-out), {@code repeatUntil}/
+ * {@code parallel}/{@code gather} (incl. dynamic fan-out, detected by its
+ * builder-generated {@code dynamic-parallel-} step-name prefix), {@code repeatUntil}/
  * {@code repeatUntilOutput}, {@code gate}, {@code supervisor}, {@code backTo}, and
  * {@code onError} all fail with a clear {@link SpecEmissionException} rather than
  * silently mis-emitting (DD-20; RISKS R2). {@code onError} is deliberately deferred:
  * IR error edges match error <em>codes</em> while v1 matches Java exception classes —
  * mapping one onto the other would silently widen or narrow recovery semantics.
+ *
+ * <h2>Parity boundaries (the DD-16 line, documented — not silent)</h2>
+ * Two v1 side channels do not survive emission, by design: (1) an overridden
+ * {@code Step.updateContext} never runs under the interpreter — context mutation is
+ * IR-declared (§14; the 2.1 adapter decision) — emission WARNs when it detects one;
+ * (2) v1's executor-written {@code Steps.outputOf(<step>)} context keys are not
+ * written by the interpreter, so steps that read them need explicit
+ * {@code contextWrites} declared via {@link SpecEmitterOptions}. Sub-workflows used
+ * as steps execute as opaque operations: their internal v1 context merge-back does
+ * not occur.
  */
 public final class SpecEmitter {
 
@@ -117,6 +129,8 @@ public final class SpecEmitter {
     private final Map<String, OperationHandler> handlersByRef = new LinkedHashMap<>();
     // behavior identity → operation alias (a reused step declares one operation)
     private final Map<Object, String> aliasByBehavior = new IdentityHashMap<>();
+    // behavior identity → whether its single handler expects explicit (non-envelope) input
+    private final Map<Object, Boolean> explicitInputByBehavior = new IdentityHashMap<>();
 
     // transformed edges (joins elided), in deterministic emission order
     private record Edge(String fromId, String toId, io.github.markpollack.workflow.spec.EdgeConditionSpec when) {
@@ -204,6 +218,28 @@ public final class SpecEmitter {
         return new SpecEmissionException("not expressible in v2-alpha: " + what
                 + ". Alpha-emittable primitives are sequential (step/then), branch, and decision "
                 + "(V2-Alpha-Plus #6 adds loop/fan-out/gate). Emission fails rather than mis-emitting.");
+    }
+
+    /**
+     * v2 context mutation is IR-declared (§14): an overridden {@code Step.updateContext}
+     * never runs under the interpreter (the DD-16 boundary, pinned at the 2.1 adapter).
+     * Emission proceeds — the topology is honest — but the author is told what they lose.
+     */
+    private static void warnOnUpdateContextOverride(Step<?, ?> step) {
+        try {
+            if (step.getClass().getMethod("updateContext",
+                    io.github.markpollack.workflow.core.AgentContext.class, Object.class)
+                    .getDeclaringClass() != Step.class) {
+                LoggerFactory.getLogger(SpecEmitter.class).warn(
+                        "step '{}' overrides Step.updateContext — its context publications will NOT "
+                                + "occur when the emitted spec executes (v2 context mutation is "
+                                + "IR-declared, §14); declare contextWrites via SpecEmitterOptions "
+                                + "if downstream nodes need those keys",
+                        step.name());
+            }
+        } catch (NoSuchMethodException ignored) {
+            // no reflective access → nothing to warn about
+        }
     }
 
     // ---------------------------------------------------------------------
@@ -386,6 +422,10 @@ public final class SpecEmitter {
                 ? decisionByOption.get(leaves.get(0)) : null;
         if (leafDecision != null) {
             convergingDecisions.add(leafDecision);
+        } else if (leaves.size() > 1) {
+            // same symmetry as the mid-graph convergence guard in autoSource: a
+            // result-less terminate would silently drop the taken path's value
+            throw notExpressible("convergence of multiple independent paths at the workflow end");
         }
 
         List<WorkflowSpecNode> nodes = new ArrayList<>();
@@ -396,21 +436,24 @@ public final class SpecEmitter {
             boolean explicitInput = custom != null && !custom.input().isEmpty();
             switch (node) {
                 case WorkflowNode.StepNode s -> {
+                    warnOnUpdateContextOverride(s.step());
                     String alias = declareOperation(id, s.step(), custom,
-                            explicitInput ? new StepOperationHandler(s.step()) : envelopeUnwrapping(s.step()));
+                            explicitInput ? new StepOperationHandler(s.step()) : envelopeUnwrapping(s.step()),
+                            explicitInput);
                     nodes.add(new TaskSpecNode(id, null, null, null, alias,
                             inputByNode.get(id), contextWrites(id, custom), null));
                 }
                 case WorkflowNode.GatewayNode g -> {
                     Step<Object, Object> routing = Step.named(id,
                             (ctx, in) -> g.predicate().test(in) ? "true" : "false");
-                    String alias = declareOperation(id, routing, custom, outcomeWrapping(routing, !explicitInput));
+                    String alias = declareOperation(id, routing, custom,
+                            outcomeWrapping(routing, !explicitInput), explicitInput);
                     nodes.add(new DecisionSpecNode(id, null, null, null, alias,
                             inputByNode.get(id), declaredOutcomes(id, custom), null));
                 }
                 case WorkflowNode.DecisionNode d -> {
                     String alias = declareOperation(id, d.routingStep(), custom,
-                            outcomeWrapping(d.routingStep(), !explicitInput));
+                            outcomeWrapping(d.routingStep(), !explicitInput), explicitInput);
                     nodes.add(new DecisionSpecNode(id, null, null, null, alias,
                             inputByNode.get(id), declaredOutcomes(id, custom), null));
                 }
@@ -448,17 +491,30 @@ public final class SpecEmitter {
      * workflow + step name: {@code java:<workflow>.<alias>:v1}.
      */
     private String declareOperation(String nodeId, Step<?, ?> behavior,
-            SpecEmitterOptions.NodeCustomization custom, OperationHandler handler) {
+            SpecEmitterOptions.NodeCustomization custom, OperationHandler handler,
+            boolean explicitInput) {
+        String existing = aliasByBehavior.get(behavior);
+        if (existing != null) {
+            // reused step instance: one declared operation, one handler — its input
+            // framing (envelope vs explicit) must therefore be consistent across
+            // every occurrence, or one node would silently get mis-framed input
+            Boolean priorMode = explicitInputByBehavior.get(behavior);
+            if (priorMode != null && priorMode != explicitInput) {
+                throw new SpecEmissionException("step '" + behavior.name() + "' is reused with both "
+                        + "explicit .input(...) bindings and auto-threaded input; its single operation "
+                        + "handler cannot serve both framings — declare input bindings consistently "
+                        + "on every occurrence (or on none)");
+            }
+            if (custom == null || custom.operationAlias() == null) {
+                return existing;
+            }
+        }
         String alias;
         String ref;
         if (custom != null && custom.operationAlias() != null) {
             alias = custom.operationAlias();
             ref = custom.operationRef();
         } else {
-            String existing = aliasByBehavior.get(behavior);
-            if (existing != null) {
-                return existing; // reused step instance: one declared operation
-            }
             alias = defaultAliasFor(nodeId, behavior);
             ref = "java:" + sanitizeId(graph.name()) + "." + alias + ":v1";
         }
@@ -474,6 +530,7 @@ public final class SpecEmitter {
         }
         handlersByRef.putIfAbsent(ref, handler);
         aliasByBehavior.put(behavior, alias);
+        explicitInputByBehavior.put(behavior, explicitInput);
         return alias;
     }
 

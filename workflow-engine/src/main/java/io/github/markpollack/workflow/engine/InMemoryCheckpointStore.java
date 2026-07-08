@@ -63,7 +63,8 @@ public final class InMemoryCheckpointStore implements CheckpointStore {
                     + "': a resumed run cannot continue under a changed definition");
         }
         return new RunState(true, run.lastEventSequence,
-                List.copyOf(run.committedNodes.values()), Optional.ofNullable(run.inFlight));
+                run.committedNodes.values().stream().map(InMemoryCheckpointStore::wireFramed).toList(),
+                Optional.ofNullable(run.inFlight));
     }
 
     @Override
@@ -71,8 +72,14 @@ public final class InMemoryCheckpointStore implements CheckpointStore {
             List<WorkflowEvent> events) {
         RunRecord run = liveRun(workflowRunId);
         appendEvents(workflowRunId, run, events);
+        // the recovery handle survives attempt increments (DESIGN § Operation Contract)
+        String externalRef = dispatch.externalRef();
+        if (externalRef == null && run.inFlight != null
+                && run.inFlight.nodeId().equals(dispatch.nodeId())) {
+            externalRef = run.inFlight.externalRef();
+        }
         run.inFlight = new InFlightAttempt(dispatch.nodeId(), dispatch.operationRef(),
-                dispatch.attemptNumber(), false, null, dispatch.scheduledFor(), dispatch.externalRef());
+                dispatch.attemptNumber(), false, null, dispatch.scheduledFor(), externalRef);
     }
 
     @Override
@@ -139,6 +146,7 @@ public final class InMemoryCheckpointStore implements CheckpointStore {
     }
 
     private static void appendEvents(String workflowRunId, RunRecord run, List<WorkflowEvent> events) {
+        // validate the whole batch first: the boundary is atomic, never a partial prefix
         long expected = run.lastEventSequence + 1;
         for (WorkflowEvent event : events) {
             if (event.sequence() != expected) {
@@ -146,10 +154,27 @@ public final class InMemoryCheckpointStore implements CheckpointStore {
                         + "': expected " + expected + " but got " + event.sequence()
                         + " (§10 committed-event rule)");
             }
-            run.journal.add(event);
-            run.lastEventSequence = expected;
             expected++;
         }
+        run.journal.addAll(events);
+        run.lastEventSequence = expected - 1;
         run.updatedAt = Instant.now();
+    }
+
+    /**
+     * Round-trips replayed results and context writes through the wire codecs so both
+     * store implementations expose identical resume semantics: a resumed output is a
+     * JSON-natural value (what a durable store — or a Python worker — would hand back),
+     * never the original live Java object.
+     */
+    private static NodeCheckpoint wireFramed(NodeCheckpoint checkpoint) {
+        OperationResult result = OperationResultCodec.fromJson(
+                OperationResultCodec.toJson(checkpoint.result()));
+        Map<String, Object> writes = new LinkedHashMap<>();
+        checkpoint.contextWrites().forEach((key, value) -> writes.put(key,
+                WorkflowEventJson.mapper().convertValue(
+                        WorkflowEventJson.mapper().valueToTree(value), Object.class)));
+        return new NodeCheckpoint(checkpoint.nodeId(), checkpoint.state(), result, writes,
+                checkpoint.attempts());
     }
 }

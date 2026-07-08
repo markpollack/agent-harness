@@ -7,9 +7,6 @@ import io.github.markpollack.workflow.engine.InMemoryEventSink;
 import io.github.markpollack.workflow.engine.OperationResult;
 import io.github.markpollack.workflow.engine.ResumeRejectedException;
 import io.github.markpollack.workflow.engine.SimpleOperationRegistry;
-import io.github.markpollack.workflow.engine.WorkflowEvent;
-import io.github.markpollack.workflow.engine.WorkflowEventSink;
-import io.github.markpollack.workflow.engine.WorkflowEventType;
 import io.github.markpollack.workflow.engine.WorkflowInterpreter;
 import io.github.markpollack.workflow.engine.WorkflowRunOutcome;
 import io.github.markpollack.workflow.spec.AlwaysCondition;
@@ -35,7 +32,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Predicate;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
@@ -97,19 +93,57 @@ class DurableInterpreterCrashRecoveryIT {
                 });
     }
 
-    /** Simulates a process crash: the observer sink throws on the first matching event. */
-    private static WorkflowEventSink crashingOn(Predicate<WorkflowEvent> crashOn) {
-        InMemoryEventSink delegate = new InMemoryEventSink();
-        return new WorkflowEventSink() {
-            private boolean crashed;
+    /**
+     * Simulates a process death at node b's node-commit boundary: throws instead of
+     * committing, so b stays a dispatched-without-result in-flight record while
+     * everything committed before remains durable.
+     */
+    private CheckpointStore crashingBeforeNodeCommitOf(String crashNode) {
+        JpaCheckpointStore delegate = store;
+        return new CheckpointStore() {
+            private boolean armed = true;
 
             @Override
-            public void emit(WorkflowEvent event) {
-                if (!crashed && crashOn.test(event)) {
-                    crashed = true;
+            public RunState openRun(String runId, String specRef, String hash) {
+                return delegate.openRun(runId, specRef, hash);
+            }
+
+            @Override
+            public void commitDispatch(String runId, DispatchRecord dispatch,
+                    java.util.List<io.github.markpollack.workflow.engine.WorkflowEvent> events) {
+                delegate.commitDispatch(runId, dispatch, events);
+            }
+
+            @Override
+            public void commitRetry(String runId, RetryRecord retry,
+                    java.util.List<io.github.markpollack.workflow.engine.WorkflowEvent> events) {
+                delegate.commitRetry(runId, retry, events);
+            }
+
+            @Override
+            public void commitNode(String runId, NodeCheckpoint checkpoint,
+                    java.util.List<io.github.markpollack.workflow.engine.WorkflowEvent> events) {
+                if (armed && checkpoint.nodeId().equals(crashNode)) {
+                    armed = false;
                     throw new IllegalStateException("simulated crash");
                 }
-                delegate.emit(event);
+                delegate.commitNode(runId, checkpoint, events);
+            }
+
+            @Override
+            public void completeRun(String runId, String terminalState,
+                    java.util.List<io.github.markpollack.workflow.engine.WorkflowEvent> events) {
+                delegate.completeRun(runId, terminalState, events);
+            }
+
+            @Override
+            public java.util.List<ObjectNode> journal(String runId) {
+                return delegate.journal(runId);
+            }
+
+            @Override
+            public PruneResult prune(java.time.Instant olderThan, boolean terminalOnly) {
+                return delegate.prune(olderThan, terminalOnly);
             }
         };
     }
@@ -121,10 +155,8 @@ class DurableInterpreterCrashRecoveryIT {
 
         // incarnation 1: node a completes and commits; b's attempt 1 runs but the
         // process dies before its result commits
-        WorkflowInterpreter first = new WorkflowInterpreter(registry(),
-                crashingOn(e -> e.eventType() == WorkflowEventType.OPERATION_SUCCEEDED
-                        && "b".equals(e.nodeId())),
-                java.time.Clock.systemUTC(), store);
+        WorkflowInterpreter first = new WorkflowInterpreter(registry(), new InMemoryEventSink(),
+                java.time.Clock.systemUTC(), crashingBeforeNodeCommitOf("b"));
         assertThatThrownBy(() -> first.run(spec, runId, null)).hasMessage("simulated crash");
 
         // mid-crash, the committed boundary is coherent: a checkpointed with its
@@ -218,10 +250,8 @@ class DurableInterpreterCrashRecoveryIT {
 
         // a fresh crash-interrupted run, then a changed definition: hash pinning rejects
         WorkflowSpec crashSpec = twoTaskSpec("pinning-crash");
-        WorkflowInterpreter crashing = new WorkflowInterpreter(registry(),
-                crashingOn(e -> e.eventType() == WorkflowEventType.OPERATION_SUCCEEDED
-                        && "b".equals(e.nodeId())),
-                java.time.Clock.systemUTC(), store);
+        WorkflowInterpreter crashing = new WorkflowInterpreter(registry(), new InMemoryEventSink(),
+                java.time.Clock.systemUTC(), crashingBeforeNodeCommitOf("b"));
         assertThatThrownBy(() -> crashing.run(crashSpec, "run-pin-crash", null))
                 .hasMessage("simulated crash");
 

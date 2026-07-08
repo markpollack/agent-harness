@@ -85,11 +85,19 @@ class JpaCheckpointStoreTest {
             assertThat(inflight.scheduledFor()).isEqualTo(Instant.EPOCH);
         });
 
+        // attempt 2's dispatch carries no handle — the committed one must survive the increment
+        store.commitDispatch("run-2",
+                new CheckpointStore.DispatchRecord("a", "java:t.a:v1", 2, Instant.EPOCH, null),
+                List.of(events.operationDispatched("a", "java:t.a:v1", 2, Instant.EPOCH)));
+        em.clear();
+        assertThat(store.openRun("run-2", "workflow://registry/t@1", "hash-a").inFlight())
+                .hasValueSatisfying(inflight -> assertThat(inflight.externalRef())
+                        .isEqualTo("session-77"));
+
         store.commitNode("run-2",
                 new CheckpointStore.NodeCheckpoint("a", "succeeded",
                         OperationResult.success(Map.of("answer", 42)), Map.of("k", "v"), 2),
-                List.of(events.operationDispatched("a", "java:t.a:v1", 2, Instant.EPOCH),
-                        events.operationSucceeded("a", "java:t.a:v1", 2, null, null),
+                List.of(events.operationSucceeded("a", "java:t.a:v1", 2, null, null),
                         events.nodeCompleted("a", "succeeded")));
         em.clear();
 

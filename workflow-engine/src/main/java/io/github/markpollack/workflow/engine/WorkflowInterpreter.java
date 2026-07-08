@@ -186,13 +186,17 @@ public final class WorkflowInterpreter {
                 };
                 if (flow instanceof Flow.End(WorkflowRunOutcome outcome)) {
                     if (checkpoints != null) {
-                        checkpoints.completeRun(workflowRunId, outcome.terminalState(), drain());
+                        List<WorkflowEvent> committed = drain();
+                        checkpoints.completeRun(workflowRunId, outcome.terminalState(), committed);
+                        publish(committed);
                     }
                     return outcome;
                 }
                 Flow.Continue next = (Flow.Continue) flow;
                 if (checkpoints != null && next.checkpoint() != null) {
-                    checkpoints.commitNode(workflowRunId, next.checkpoint(), drain());
+                    List<WorkflowEvent> committed = drain();
+                    checkpoints.commitNode(workflowRunId, next.checkpoint(), committed);
+                    publish(committed);
                 }
                 current = next.nextNodeId();
             }
@@ -202,10 +206,16 @@ public final class WorkflowInterpreter {
         // Durability plumbing
         // ---------------------------------------------------------------------
 
-        /** Live sinks see every event; durable mode also buffers it for the next commit boundary. */
+        /**
+         * Ephemeral: publish at emit (the sink is the only record). Durable: buffer —
+         * events reach the observer sink only AFTER their boundary commits (DESIGN
+         * "commit first, publish second"): an observer must never see a phantom event
+         * that a crash later replaces with a different event of the same sequence.
+         */
         private void emit(WorkflowEvent event) {
-            sink.emit(event);
-            if (checkpoints != null) {
+            if (checkpoints == null) {
+                sink.emit(event);
+            } else {
                 buffer.add(event);
             }
         }
@@ -214,6 +224,11 @@ public final class WorkflowInterpreter {
             List<WorkflowEvent> drained = List.copyOf(buffer);
             buffer.clear();
             return drained;
+        }
+
+        /** Post-commit observer publication; a throwing observer no longer loses committed events. */
+        private void publish(List<WorkflowEvent> committed) {
+            committed.forEach(sink::emit);
         }
 
         /**
@@ -276,18 +291,22 @@ public final class WorkflowInterpreter {
 
         private void commitDispatchBoundary(String nodeId, String ref, int attempt, Instant scheduledFor) {
             if (checkpoints != null) {
+                List<WorkflowEvent> committed = drain();
                 checkpoints.commitDispatch(workflowRunId,
                         new CheckpointStore.DispatchRecord(nodeId, ref, attempt, scheduledFor, null),
-                        drain());
+                        committed);
+                publish(committed);
             }
         }
 
         private void commitRetryBoundary(String nodeId, String ref, int attempt, long delayMillis,
                 Instant scheduledFor) {
             if (checkpoints != null) {
+                List<WorkflowEvent> committed = drain();
                 checkpoints.commitRetry(workflowRunId,
                         new CheckpointStore.RetryRecord(nodeId, ref, attempt, delayMillis, scheduledFor),
-                        drain());
+                        committed);
+                publish(committed);
             }
         }
 
@@ -454,9 +473,18 @@ public final class WorkflowInterpreter {
             OperationResult interruptedResult = null;
             if (inflight != null) {
                 if (inflight.retryScheduled()) {
-                    // committed RetryScheduled: the stale retry fires immediately (§17 resume)
+                    // committed RetryScheduled (§17 resume): fire-now ONLY when the scheduled
+                    // time has passed (misfire policy); a not-yet-due retry waits out its
+                    // remaining delay — resume must not turn long backoffs into hot loops
                     attempt = inflight.attemptNumber() + 1;
                     scheduledFor = inflight.scheduledFor();
+                    if (scheduledFor != null) {
+                        long remaining = java.time.Duration.between(clock.instant(), scheduledFor)
+                                .toMillis();
+                        if (remaining > 0 && !sleep(remaining)) {
+                            return interruptedWhileWaiting(nodeId, attempt);
+                        }
+                    }
                 } else {
                     // dispatched-without-result: normalize through ordinary §17 precedence
                     attempt = inflight.attemptNumber();
@@ -504,14 +532,27 @@ public final class WorkflowInterpreter {
                     scheduledFor = clock.instant().plusMillis(delayMillis);
                     commitRetryBoundary(nodeId, ref, attempt, delayMillis, scheduledFor);
                     if (!sleep(delayMillis)) {
-                        return new AttemptOutcome(null, failWorkflow(nodeId, "aborted",
-                                "interrupted while waiting to retry"), attempt);
+                        return interruptedWhileWaiting(nodeId, attempt);
                     }
                     attempt++;
                     continue;
                 }
                 return new AttemptOutcome(result, null, attempt); // exhausted → caller routes error edges
             }
+        }
+
+        /**
+         * Ephemeral: the run aborts (§17 — there is nothing to resume). Durable: throw
+         * without a terminal commit — the committed dispatch/retry state stays
+         * resumable; a graceful shutdown must never be more destructive than a crash.
+         */
+        private AttemptOutcome interruptedWhileWaiting(String nodeId, int attempt) {
+            if (checkpoints != null) {
+                throw new WorkflowInterruptedException("interrupted while waiting to retry node '"
+                        + nodeId + "' (attempt " + attempt + "); the run remains resumable");
+            }
+            return new AttemptOutcome(null, failWorkflow(nodeId, "aborted",
+                    "interrupted while waiting to retry"), attempt);
         }
 
         /**
@@ -543,6 +584,11 @@ public final class WorkflowInterpreter {
             } catch (InterruptedException ex) {
                 Thread.currentThread().interrupt();
                 worker.interrupt();
+                if (checkpoints != null) {
+                    throw new WorkflowInterruptedException("interpreter interrupted during attempt "
+                            + invocation.attemptNumber() + " of node '" + invocation.nodeId()
+                            + "'; the run remains resumable");
+                }
                 return OperationResult.aborted("interpreter interrupted during attempt");
             } catch (ExecutionException ex) {
                 // guarded() catches Throwable, so this is belt-and-braces only

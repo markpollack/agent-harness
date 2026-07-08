@@ -79,6 +79,50 @@ class SpecEmitterDeterminismTest {
     }
 
     @Test
+    void reusedStepWithMixedInputFramingsCollidesLoudly() {
+        // one behavior → one handler → one input framing: explicit bindings on one
+        // occurrence and auto-threading on another would silently mis-frame one node
+        Step<Object, Object> shared = Step.named("shared", (ctx, in) -> in);
+        Workflow<String, Object> workflow = Workflow.<String, Object>define("mixed")
+                .step(shared)
+                .then(Step.named("mid", (ctx, in) -> in))
+                .then(shared)
+                .build();
+        SpecEmitterOptions options = SpecEmitterOptions.builder()
+                .node("shared", n -> n.input("payload", "$input"))
+                .build();
+
+        assertThatThrownBy(() -> workflow.toSpec(options))
+                .isInstanceOf(SpecEmissionException.class)
+                .hasMessageContaining("framing");
+    }
+
+    @Test
+    void multiLeafConvergenceAcrossIndependentPathsIsRejected() {
+        // unreachable through the v1 builder (arms are single steps), but
+        // SpecEmitter.emit is public over WorkflowGraph — guard the silent path
+        io.github.markpollack.workflow.flows.workflow.WorkflowGraph<Object, Object> graph =
+                io.github.markpollack.workflow.flows.workflow.WorkflowGraph.of("manual",
+                        java.util.List.of(
+                                io.github.markpollack.workflow.flows.workflow.WorkflowNode
+                                        .deterministic("a", Step.named("a", (ctx, in) -> in)),
+                                io.github.markpollack.workflow.flows.workflow.WorkflowNode
+                                        .deterministic("x", Step.named("x", (ctx, in) -> in)),
+                                io.github.markpollack.workflow.flows.workflow.WorkflowNode
+                                        .deterministic("y", Step.named("y", (ctx, in) -> in))),
+                        java.util.List.of(
+                                io.github.markpollack.workflow.flows.workflow.WorkflowEdge
+                                        .sequence("a", "x"),
+                                io.github.markpollack.workflow.flows.workflow.WorkflowEdge
+                                        .sequence("a", "y")),
+                        "a", "y");
+
+        assertThatThrownBy(() -> SpecEmitter.emit(graph, SpecEmitterOptions.defaults()))
+                .isInstanceOf(SpecEmissionException.class)
+                .hasMessageContaining("workflow end");
+    }
+
+    @Test
     void registryRejectsCollidingRefsAcrossEmissions() {
         // two different workflows that structurally derive the same ref: the registry —
         // not last-wins — is the backstop (R1 surfacing exactly where it should)

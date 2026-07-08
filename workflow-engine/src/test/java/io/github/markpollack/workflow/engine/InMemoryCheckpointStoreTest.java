@@ -94,6 +94,51 @@ class InMemoryCheckpointStoreTest {
     }
 
     @Test
+    void externalRefSurvivesAttemptIncrements() {
+        WorkflowEventFactory events = factory("run-ext");
+        store.openRun("run-ext", "workflow://registry/t@1", "hash-a");
+        store.commitDispatch("run-ext",
+                new CheckpointStore.DispatchRecord("a", "java:t.a:v1", 1, null, "session-42"),
+                List.of(events.workflowStarted("t", "a"), events.nodeStarted("a", "task"),
+                        events.operationDispatched("a", "java:t.a:v1", 1, null)));
+        store.commitRetry("run-ext",
+                new CheckpointStore.RetryRecord("a", "java:t.a:v1", 1, 10, Instant.EPOCH),
+                List.of(events.operationFailed("a", "java:t.a:v1", 1,
+                                OperationResult.failure(ErrorEnvelope.of("BOOM", "x", true))),
+                        events.retryScheduled("a", "java:t.a:v1", 1, "policy_allows", 10,
+                                new io.github.markpollack.workflow.spec.RetryPolicySpec(2, null, null))));
+        // attempt 2's dispatch carries no handle — the recorded one must survive
+        store.commitDispatch("run-ext",
+                new CheckpointStore.DispatchRecord("a", "java:t.a:v1", 2, Instant.EPOCH, null),
+                List.of(events.operationDispatched("a", "java:t.a:v1", 2, Instant.EPOCH)));
+
+        assertThat(store.openRun("run-ext", "workflow://registry/t@1", "hash-a").inFlight())
+                .hasValueSatisfying(attempt -> {
+                    assertThat(attempt.attemptNumber()).isEqualTo(2);
+                    assertThat(attempt.externalRef()).isEqualTo("session-42");
+                });
+    }
+
+    @Test
+    void replayedResultsAreWireFramedJsonNaturalValues() {
+        WorkflowEventFactory events = factory("run-wire");
+        store.openRun("run-wire", "workflow://registry/t@1", "hash-a");
+        record Pojo(String name, int n) {
+        }
+        store.commitNode("run-wire",
+                new CheckpointStore.NodeCheckpoint("a", "succeeded",
+                        OperationResult.success(new Pojo("x", 7)), Map.of("k", new Pojo("y", 8)), 1),
+                List.of(events.workflowStarted("t", "a")));
+
+        CheckpointStore.NodeCheckpoint replayed =
+                store.openRun("run-wire", "workflow://registry/t@1", "hash-a").committedNodes().get(0);
+        // both stores expose identical resume semantics: JSON-natural values, never live objects
+        assertThat(((OperationResult.Success) replayed.result()).output())
+                .isEqualTo(Map.of("name", "x", "n", 7));
+        assertThat(replayed.contextWrites().get("k")).isEqualTo(Map.of("name", "y", "n", 8));
+    }
+
+    @Test
     void terminalRunsRefuseResume() {
         WorkflowEventFactory events = factory("run-4");
         store.openRun("run-4", "workflow://registry/t@1", "hash-a");
