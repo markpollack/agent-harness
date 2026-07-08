@@ -71,6 +71,8 @@ class TestInvariants:
         with pytest.raises(ValueError):
             RetryPolicy(max_attempts=2**31)
         with pytest.raises(ValueError):
+            RetryPolicy(max_attempts=2, retry_on=())  # absent or non-empty
+        with pytest.raises(ValueError):
             Timeout(per_attempt_millis=2**53)
 
     def test_terminate_status_is_closed(self) -> None:

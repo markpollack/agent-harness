@@ -137,6 +137,21 @@ class Backoff:
         if self.multiplier is not None and self.multiplier < 1.0:
             raise ValueError(f"multiplier must be >= 1.0, got {self.multiplier}")
 
+    @classmethod
+    def fixed(cls, initial_millis: int) -> Backoff:
+        return cls(strategy="fixed", initial_millis=initial_millis)
+
+    @classmethod
+    def exponential(
+        cls, initial_millis: int, multiplier: float, max_millis: int | None = None
+    ) -> Backoff:
+        return cls(
+            strategy="exponential",
+            initial_millis=initial_millis,
+            max_millis=max_millis,
+            multiplier=multiplier,
+        )
+
     def to_wire(self) -> dict[str, Any]:
         wire: dict[str, Any] = {"strategy": self.strategy, "initialMillis": self.initial_millis}
         if self.max_millis is not None:
@@ -185,6 +200,8 @@ class RetryPolicy:
             raise ValueError(f"maxAttempts must be within [1, 2^31-1], got {self.max_attempts}")
         if self.retry_on is not None:
             object.__setattr__(self, "retry_on", tuple(self.retry_on))
+            if not self.retry_on:
+                raise ValueError("retryOn must be absent (None) or non-empty (schema minItems)")
 
     def to_wire(self) -> dict[str, Any]:
         wire: dict[str, Any] = {"maxAttempts": self.max_attempts}

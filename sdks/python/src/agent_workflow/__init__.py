@@ -7,6 +7,14 @@ The public API is exactly what this module re-exports; ``_``-prefixed modules ar
 implementation detail.
 """
 
+from ._builder import (
+    WorkflowBuilder,
+    from_const,
+    from_context,
+    from_input,
+    from_node_decision,
+    from_node_output,
+)
 from ._errors import ValidationError, WorkflowValidationError
 from ._io import load
 from ._model import (
@@ -56,9 +64,15 @@ __all__ = [
     "TerminateNode",
     "Timeout",
     "ValidationError",
+    "WorkflowBuilder",
     "WorkflowSpec",
     "WorkflowValidationError",
     "__version__",
+    "from_const",
+    "from_context",
+    "from_input",
+    "from_node_decision",
+    "from_node_output",
     "load",
     "validate",
 ]
