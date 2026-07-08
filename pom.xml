@@ -72,6 +72,13 @@
         <jacoco.version>0.8.12</jacoco.version>
         <json-schema-validator.version>1.5.7</json-schema-validator.version>
         <java-json-canonicalization.version>1.1</java-json-canonicalization.version>
+        <!-- Environment-coupled dependencies (container tooling, JDBC drivers): pinned
+             here explicitly and bumped when local daemons/servers upgrade — never taken
+             from Spring Boot's BOM, whose pins age on Boot's release schedule, not the
+             environment's (Boot 3.4.4's Testcontainers 1.20.4 cannot talk to Docker
+             daemons requiring API >= 1.44) -->
+        <testcontainers.version>1.21.4</testcontainers.version>
+        <postgresql-jdbc.version>42.7.10</postgresql-jdbc.version>
 
         <!-- Release plugin versions -->
         <maven-source-plugin.version>3.3.0</maven-source-plugin.version>
@@ -121,6 +128,11 @@
             </dependency>
             <dependency>
                 <groupId>io.github.markpollack</groupId>
+                <artifactId>workflow-engine-jpa</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.markpollack</groupId>
                 <artifactId>workflow-tools</artifactId>
                 <version>${project.version}</version>
             </dependency>
@@ -155,6 +167,23 @@
                 <groupId>io.github.markpollack</groupId>
                 <artifactId>journal-core</artifactId>
                 <version>${journal-core.version}</version>
+            </dependency>
+
+            <!-- Environment-coupled test dependencies (see the version property note) -->
+            <dependency>
+                <groupId>org.testcontainers</groupId>
+                <artifactId>junit-jupiter</artifactId>
+                <version>${testcontainers.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.testcontainers</groupId>
+                <artifactId>postgresql</artifactId>
+                <version>${testcontainers.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.postgresql</groupId>
+                <artifactId>postgresql</artifactId>
+                <version>${postgresql-jdbc.version}</version>
             </dependency>
 
             <!-- Spring AI -->

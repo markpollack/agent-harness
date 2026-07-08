@@ -83,25 +83,22 @@
             <version>2.3.232</version>
             <scope>test</scope>
         </dependency>
-        <!-- Testcontainers/PostgreSQL dialect IT — the repo's first Testcontainers usage.
-             1.21.4 (not Boot 3.4.4's managed 1.20.4): current Docker daemons (API 1.44+
-             minimum) reject the older bundled docker-java client -->
+        <!-- Testcontainers/PostgreSQL dialect IT. Versions are parent-managed as
+             environment-coupled pins (Boot's BOM ages on Boot's schedule, not the
+             Docker daemon's — see the parent pom's version-property note) -->
         <dependency>
             <groupId>org.testcontainers</groupId>
             <artifactId>junit-jupiter</artifactId>
-            <version>1.21.4</version>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.testcontainers</groupId>
             <artifactId>postgresql</artifactId>
-            <version>1.21.4</version>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
-            <version>42.7.5</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
