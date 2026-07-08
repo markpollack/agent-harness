@@ -58,10 +58,24 @@ public final class WorkflowEventFactory {
      */
     public WorkflowEventFactory(String workflowRunId, String workflowSpecRef, Clock clock,
             String executorId) {
+        this(workflowRunId, workflowSpecRef, clock, executorId, 0);
+    }
+
+    /**
+     * Resume constructor (durable interpreters): continues a committed stream — the
+     * next minted event gets {@code initialSequence + 1}. {@code initialSequence} is
+     * the store's committed {@code lastEventSequence}; 0 (the sentinel) is a fresh run.
+     */
+    public WorkflowEventFactory(String workflowRunId, String workflowSpecRef, Clock clock,
+            String executorId, long initialSequence) {
         this.workflowRunId = Objects.requireNonNull(workflowRunId, "workflowRunId");
         this.workflowSpecRef = Objects.requireNonNull(workflowSpecRef, "workflowSpecRef");
         this.clock = Objects.requireNonNull(clock, "clock");
         this.executorId = executorId;
+        if (initialSequence < 0) {
+            throw new IllegalArgumentException("initialSequence must be >= 0: " + initialSequence);
+        }
+        this.sequence.set(initialSequence);
     }
 
     /** The sequence of the most recently minted event; 0 if none yet. */

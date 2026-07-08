@@ -41,6 +41,7 @@
         <module>workflow-core</module>
         <module>workflow-spec</module>
         <module>workflow-engine</module>
+        <module>workflow-engine-jpa</module>
         <module>workflow-tools</module>
         <module>workflow-agents</module>
         <module>workflow-examples</module>

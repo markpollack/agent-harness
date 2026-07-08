@@ -23,6 +23,7 @@ import io.github.markpollack.workflow.spec.WorkflowSpecValidationException;
 import io.github.markpollack.workflow.spec.WorkflowSpecValidator;
 
 import java.time.Clock;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -43,9 +44,17 @@ import java.util.concurrent.TimeoutException;
  * {@code failure(UNHANDLED_EXCEPTION, retryable=false)} and flows through ordinary
  * precedence).
  *
- * <p>Non-durable, in-memory alpha interpreter: the canonical sink receives events in
- * deterministic execution order with monotonic sequences (§10); durability
- * (CheckpointStore, resume, INTERRUPTED normalization) arrives in Stage 3.
+ * <p>Without a {@link CheckpointStore} this is the in-memory alpha interpreter: the
+ * canonical sink receives events in deterministic execution order with monotonic
+ * sequences (§10). With one, the same control plane becomes durable: progress commits
+ * at the §10 boundaries (dispatch, retry-scheduled, node completion, terminal), each
+ * boundary an atomic events-plus-state commit, and an interpreter reopened on the same
+ * {@code workflowRunId} resumes — committed completed nodes never re-execute (their
+ * recorded {@link OperationResult}s replay into bindings and routing); an in-flight
+ * attempt normalizes to {@code OperationFailed(code=INTERRUPTED, retryable=true)}
+ * through ordinary §17 precedence; a stale committed RetryScheduled fires immediately.
+ * The caller re-supplies the same input and seed context on resume (neither is
+ * persisted); the run identity pins the spec via {@link CanonicalSpecHash}.
  */
 public final class WorkflowInterpreter {
 
@@ -55,16 +64,29 @@ public final class WorkflowInterpreter {
     private final OperationRegistry registry;
     private final WorkflowEventSink sink;
     private final Clock clock;
+    private final CheckpointStore checkpoints;
     private final WorkflowSpecValidator validator = new WorkflowSpecValidator();
 
     public WorkflowInterpreter(OperationRegistry registry, WorkflowEventSink sink) {
-        this(registry, sink, Clock.systemUTC());
+        this(registry, sink, Clock.systemUTC(), null);
     }
 
     public WorkflowInterpreter(OperationRegistry registry, WorkflowEventSink sink, Clock clock) {
+        this(registry, sink, clock, null);
+    }
+
+    /**
+     * Durable interpreter: progress commits to {@code checkpoints} (null = ephemeral).
+     * In durable mode the store's journal is the authoritative event record; the sink
+     * observes live events and is non-authoritative across incarnations (a resumed
+     * run's sink sees only the new incarnation's events).
+     */
+    public WorkflowInterpreter(OperationRegistry registry, WorkflowEventSink sink, Clock clock,
+            CheckpointStore checkpoints) {
         this.registry = Objects.requireNonNull(registry, "registry");
         this.sink = Objects.requireNonNull(sink, "sink");
         this.clock = Objects.requireNonNull(clock, "clock");
+        this.checkpoints = checkpoints;
     }
 
     /** Runs with a fresh context carrying only the run id. */
@@ -78,6 +100,9 @@ public final class WorkflowInterpreter {
      *
      * @throws WorkflowSpecValidationException if the spec fails semantic validation —
      *                                         rejected before any event is emitted (§19)
+     * @throws ResumeRejectedException         durable mode: the run is terminal or the
+     *                                         spec's canonical hash differs from the
+     *                                         one pinned at first open
      */
     public WorkflowRunOutcome run(WorkflowSpec spec, String workflowRunId, Object input,
             AgentContext seedContext) {
@@ -92,7 +117,9 @@ public final class WorkflowInterpreter {
                 .with(AgentContext.WORKFLOW_RUN_ID, workflowRunId)
                 .with(AgentContext.WORKFLOW_NAME, spec.metadata().name())
                 .build();
-        return new Run(spec, workflowRunId, input, context).execute();
+        CheckpointStore.RunState state = checkpoints == null ? null
+                : checkpoints.openRun(workflowRunId, specRef(spec), CanonicalSpecHash.of(spec));
+        return new Run(spec, workflowRunId, input, context, state).execute();
     }
 
     /** §18 portable form derived from metadata: {@code workflow://registry/<name>@<version>}. */
@@ -104,7 +131,8 @@ public final class WorkflowInterpreter {
 
     /** Node execution either continues along an edge or ends the workflow. */
     private sealed interface Flow {
-        record Continue(String nextNodeId) implements Flow {
+        /** {@code checkpoint} is the completed node's durable record; null when none applies. */
+        record Continue(String nextNodeId, CheckpointStore.NodeCheckpoint checkpoint) implements Flow {
         }
 
         record End(WorkflowRunOutcome outcome) implements Flow {
@@ -119,68 +147,195 @@ public final class WorkflowInterpreter {
         private final WorkflowEventFactory events;
         private final BindingEvaluator evaluator;
         private final Map<String, WorkflowSpecNode> nodesById = new LinkedHashMap<>();
+        private final CheckpointStore.RunState resume;
+        private final List<WorkflowEvent> buffer = new ArrayList<>();
+        private CheckpointStore.InFlightAttempt pendingResume;
         private AgentContextAdapter store;
 
-        Run(WorkflowSpec spec, String workflowRunId, Object input, AgentContext context) {
+        Run(WorkflowSpec spec, String workflowRunId, Object input, AgentContext context,
+                CheckpointStore.RunState resume) {
             this.spec = spec;
             this.workflowRunId = workflowRunId;
-            this.events = new WorkflowEventFactory(workflowRunId, specRef(spec), clock);
+            this.resume = resume;
+            this.events = new WorkflowEventFactory(workflowRunId, specRef(spec), clock, null,
+                    resume != null ? resume.lastEventSequence() : 0);
             this.evaluator = new BindingEvaluator(input, spec.constants());
             this.store = new AgentContextAdapter(context);
+            this.pendingResume = resume != null ? resume.inFlight().orElse(null) : null;
             spec.nodes().forEach(node -> nodesById.put(node.id(), node));
         }
 
         WorkflowRunOutcome execute() {
-            sink.emit(events.workflowStarted(spec.metadata().name(), spec.entrypoint()));
-            String current = spec.entrypoint();
+            String current;
+            if (resume != null && resume.lastEventSequence() > 0) {
+                current = restoreCommittedState();
+            } else {
+                emit(events.workflowStarted(spec.metadata().name(), spec.entrypoint()));
+                current = spec.entrypoint();
+            }
             while (true) {
                 WorkflowSpecNode node = nodesById.get(current);
-                sink.emit(events.nodeStarted(node.id(), nodeKind(node)));
+                CheckpointStore.InFlightAttempt inflight = consumeInFlight(node.id());
+                if (inflight == null) {
+                    emit(events.nodeStarted(node.id(), nodeKind(node)));
+                }
                 Flow flow = switch (node) {
-                    case TaskSpecNode task -> executeTask(task);
-                    case DecisionSpecNode decision -> executeDecision(decision);
+                    case TaskSpecNode task -> executeTask(task, inflight);
+                    case DecisionSpecNode decision -> executeDecision(decision, inflight);
                     case TerminateSpecNode terminate -> executeTerminate(terminate);
                 };
                 if (flow instanceof Flow.End(WorkflowRunOutcome outcome)) {
+                    if (checkpoints != null) {
+                        checkpoints.completeRun(workflowRunId, outcome.terminalState(), drain());
+                    }
                     return outcome;
                 }
-                current = ((Flow.Continue) flow).nextNodeId();
+                Flow.Continue next = (Flow.Continue) flow;
+                if (checkpoints != null && next.checkpoint() != null) {
+                    checkpoints.commitNode(workflowRunId, next.checkpoint(), drain());
+                }
+                current = next.nextNodeId();
             }
+        }
+
+        // ---------------------------------------------------------------------
+        // Durability plumbing
+        // ---------------------------------------------------------------------
+
+        /** Live sinks see every event; durable mode also buffers it for the next commit boundary. */
+        private void emit(WorkflowEvent event) {
+            sink.emit(event);
+            if (checkpoints != null) {
+                buffer.add(event);
+            }
+        }
+
+        private List<WorkflowEvent> drain() {
+            List<WorkflowEvent> drained = List.copyOf(buffer);
+            buffer.clear();
+            return drained;
+        }
+
+        /**
+         * Silent replay of committed progress: recorded results feed bindings and
+         * routing exactly as live execution would, with no re-dispatch and no event
+         * re-emission (those events are already committed with their boundaries).
+         * Returns the node id at which live execution resumes.
+         */
+        private String restoreCommittedState() {
+            for (CheckpointStore.NodeCheckpoint checkpoint : resume.committedNodes()) {
+                if (checkpoint.result() instanceof OperationResult.Success success) {
+                    evaluator.recordOutput(checkpoint.nodeId(), success.output());
+                    if (nodesById.get(checkpoint.nodeId()) instanceof DecisionSpecNode) {
+                        String outcome = extractOutcome(success.output());
+                        if (outcome != null) {
+                            evaluator.recordDecision(checkpoint.nodeId(), outcome);
+                        }
+                    }
+                    for (Map.Entry<String, Object> write : checkpoint.contextWrites().entrySet()) {
+                        store = store.put(write.getKey(), write.getValue());
+                    }
+                }
+            }
+            if (pendingResume != null) {
+                return pendingResume.nodeId();
+            }
+            List<CheckpointStore.NodeCheckpoint> committed = resume.committedNodes();
+            if (committed.isEmpty()) {
+                throw new IllegalStateException("run '" + workflowRunId + "' has committed events but "
+                        + "no committed progress records — corrupt checkpoint state");
+            }
+            return silentRoute(committed.get(committed.size() - 1));
+        }
+
+        /** Recomputes a committed node's §16 edge selection deterministically, emitting nothing. */
+        private String silentRoute(CheckpointStore.NodeCheckpoint checkpoint) {
+            List<WorkflowEdgeSpec> matches;
+            if (checkpoint.result() instanceof OperationResult.Success success) {
+                String outcome = nodesById.get(checkpoint.nodeId()) instanceof DecisionSpecNode
+                        ? extractOutcome(success.output()) : null;
+                matches = successMatches(checkpoint.nodeId(), outcome);
+            } else {
+                matches = errorMatches(checkpoint.nodeId(), errorOf(checkpoint.result()));
+            }
+            if (matches.size() != 1) {
+                throw new IllegalStateException("replay of node '" + checkpoint.nodeId()
+                        + "' did not select exactly one edge — corrupt checkpoint state");
+            }
+            return matches.get(0).to();
+        }
+
+        private CheckpointStore.InFlightAttempt consumeInFlight(String nodeId) {
+            if (pendingResume != null && pendingResume.nodeId().equals(nodeId)) {
+                CheckpointStore.InFlightAttempt attempt = pendingResume;
+                pendingResume = null;
+                return attempt;
+            }
+            return null;
+        }
+
+        private void commitDispatchBoundary(String nodeId, String ref, int attempt, Instant scheduledFor) {
+            if (checkpoints != null) {
+                checkpoints.commitDispatch(workflowRunId,
+                        new CheckpointStore.DispatchRecord(nodeId, ref, attempt, scheduledFor, null),
+                        drain());
+            }
+        }
+
+        private void commitRetryBoundary(String nodeId, String ref, int attempt, long delayMillis,
+                Instant scheduledFor) {
+            if (checkpoints != null) {
+                checkpoints.commitRetry(workflowRunId,
+                        new CheckpointStore.RetryRecord(nodeId, ref, attempt, delayMillis, scheduledFor),
+                        drain());
+            }
+        }
+
+        private static Flow withCheckpoint(Flow flow, CheckpointStore.NodeCheckpoint checkpoint) {
+            return flow instanceof Flow.Continue(String next, CheckpointStore.NodeCheckpoint ignored)
+                    ? new Flow.Continue(next, checkpoint)
+                    : flow;
         }
 
         // ---------------------------------------------------------------------
         // Node execution
         // ---------------------------------------------------------------------
 
-        private Flow executeTask(TaskSpecNode task) {
-            BindingResolution input = assembleInput(task.id(), task.input());
+        private Flow executeTask(TaskSpecNode task, CheckpointStore.InFlightAttempt inflight) {
+            BindingResolution input = assembleInput(task.id(), task.input(), inflight == null);
             if (input instanceof BindingResolution.Failed(String reason)) {
                 return failWorkflow(task.id(), "failed", reason);
             }
             Object inputValue = task.input() == null ? null
                     : ((BindingResolution.Resolved) input).value();
 
-            AttemptOutcome attempt = dispatchWithRetry(task.id(), task.operation(), task.policies(), inputValue);
+            AttemptOutcome attempt = dispatchWithRetry(task.id(), task.operation(), task.policies(),
+                    inputValue, inflight);
             if (attempt.flow() != null) {
                 return attempt.flow();
             }
             OperationResult result = attempt.result();
             if (!result.successful()) {
-                return routeFailure(task.id(), result);
+                return withCheckpoint(routeFailure(task.id(), result),
+                        new CheckpointStore.NodeCheckpoint(task.id(), "failed", result, Map.of(),
+                                attempt.attempts()));
             }
 
             Object output = ((OperationResult.Success) result).output();
             evaluator.recordOutput(task.id(), output);
-            Flow writeFailure = applyContextWrites(task);
+            Map<String, Object> writes = new LinkedHashMap<>();
+            Flow writeFailure = applyContextWrites(task, writes);
             if (writeFailure != null) {
                 return writeFailure;
             }
-            sink.emit(events.nodeCompleted(task.id(), "succeeded"));
-            return routeSuccess(task.id(), null);
+            emit(events.nodeCompleted(task.id(), "succeeded"));
+            return withCheckpoint(routeSuccess(task.id(), null),
+                    new CheckpointStore.NodeCheckpoint(task.id(), "succeeded", result, writes,
+                            attempt.attempts()));
         }
 
-        private Flow executeDecision(DecisionSpecNode decision) {
-            BindingResolution input = assembleInput(decision.id(), decision.input());
+        private Flow executeDecision(DecisionSpecNode decision, CheckpointStore.InFlightAttempt inflight) {
+            BindingResolution input = assembleInput(decision.id(), decision.input(), inflight == null);
             if (input instanceof BindingResolution.Failed(String reason)) {
                 return failWorkflow(decision.id(), "failed", reason);
             }
@@ -188,13 +343,15 @@ public final class WorkflowInterpreter {
                     : ((BindingResolution.Resolved) input).value();
 
             AttemptOutcome attempt = dispatchWithRetry(decision.id(), decision.operation(),
-                    decision.policies(), inputValue);
+                    decision.policies(), inputValue, inflight);
             if (attempt.flow() != null) {
                 return attempt.flow();
             }
             OperationResult result = attempt.result();
             if (!result.successful()) {
-                return routeFailure(decision.id(), result);
+                return withCheckpoint(routeFailure(decision.id(), result),
+                        new CheckpointStore.NodeCheckpoint(decision.id(), "failed", result, Map.of(),
+                                attempt.attempts()));
             }
 
             Object output = ((OperationResult.Success) result).output();
@@ -209,8 +366,10 @@ public final class WorkflowInterpreter {
             }
             evaluator.recordOutput(decision.id(), output);
             evaluator.recordDecision(decision.id(), outcome);
-            sink.emit(events.nodeCompleted(decision.id(), "succeeded"));
-            return routeSuccess(decision.id(), outcome);
+            emit(events.nodeCompleted(decision.id(), "succeeded"));
+            return withCheckpoint(routeSuccess(decision.id(), outcome),
+                    new CheckpointStore.NodeCheckpoint(decision.id(), "succeeded", result, Map.of(),
+                            attempt.attempts()));
         }
 
         private Flow executeTerminate(TerminateSpecNode terminate) {
@@ -218,15 +377,15 @@ public final class WorkflowInterpreter {
             if (terminate.result() != null) {
                 BindingResolution resolution = evaluator.resolve(terminate.result(), store);
                 if (resolution instanceof BindingResolution.Failed(String reason)) {
-                    sink.emit(events.bindingEvaluated(terminate.id(), "result",
+                    emit(events.bindingEvaluated(terminate.id(), "result",
                             terminate.result().from(), false, null));
                     return failWorkflow(terminate.id(), "failed", reason);
                 }
                 result = ((BindingResolution.Resolved) resolution).value();
-                sink.emit(events.bindingEvaluated(terminate.id(), "result",
+                emit(events.bindingEvaluated(terminate.id(), "result",
                         terminate.result().from(), true, ValueDisclosure.metadataOnly(result)));
             }
-            sink.emit(events.nodeCompleted(terminate.id(), "succeeded"));
+            emit(events.nodeCompleted(terminate.id(), "succeeded"));
 
             return switch (terminate.status()) {
                 case COMPLETED -> completeWorkflow(terminate.id(), result);
@@ -243,18 +402,18 @@ public final class WorkflowInterpreter {
                 for (Map.Entry<String, Binding> entry : new TreeMap<>(spec.outputs()).entrySet()) {
                     BindingResolution resolution = evaluator.resolve(entry.getValue(), store);
                     if (resolution instanceof BindingResolution.Failed(String reason)) {
-                        sink.emit(events.bindingEvaluated(nodeId, entry.getKey(),
+                        emit(events.bindingEvaluated(nodeId, entry.getKey(),
                                 entry.getValue().from(), false, null));
                         return endWorkflow("failed", reason, result);
                     }
                     Object value = ((BindingResolution.Resolved) resolution).value();
-                    sink.emit(events.bindingEvaluated(nodeId, entry.getKey(),
+                    emit(events.bindingEvaluated(nodeId, entry.getKey(),
                             entry.getValue().from(), true, ValueDisclosure.metadataOnly(value)));
                     outputs.put(entry.getKey(), value);
                 }
             }
             Object disclosed = outputs != null ? outputs : result;
-            sink.emit(events.workflowCompleted("completed",
+            emit(events.workflowCompleted("completed",
                     disclosed != null ? ValueDisclosure.metadataOnly(disclosed) : null));
             return new Flow.End(new WorkflowRunOutcome("completed", null, result, outputs));
         }
@@ -263,12 +422,15 @@ public final class WorkflowInterpreter {
         // Dispatch and retry (§17)
         // ---------------------------------------------------------------------
 
-        /** Either a terminal flow (cancelled/aborted/unresolvable) or the final attempt result. */
-        private record AttemptOutcome(OperationResult result, Flow flow) {
+        /**
+         * Either a terminal flow (cancelled/aborted/unresolvable) or the final attempt
+         * result; {@code attempts} is the last attempt number for the durable record.
+         */
+        private record AttemptOutcome(OperationResult result, Flow flow, int attempts) {
         }
 
         private AttemptOutcome dispatchWithRetry(String nodeId, String operationAlias,
-                PolicyBundle nodePolicies, Object input) {
+                PolicyBundle nodePolicies, Object input, CheckpointStore.InFlightAttempt inflight) {
             OperationDeclaration declaration = spec.operations().get(operationAlias);
             String ref = declaration.ref();
             OperationHandler handler;
@@ -276,11 +438,11 @@ public final class WorkflowInterpreter {
                 handler = registry.resolve(ref);
             } catch (UnknownOperationException ex) {
                 return new AttemptOutcome(null,
-                        failWorkflow(nodeId, "aborted", "unknown operation: " + ex.operationRef()));
+                        failWorkflow(nodeId, "aborted", "unknown operation: " + ex.operationRef()), 0);
             } catch (RuntimeException ex) {
                 // a custom registry that throws must not kill the run without a terminal event
                 return new AttemptOutcome(null, failWorkflow(nodeId, "aborted",
-                        "operation resolution failed: " + ref));
+                        "operation resolution failed: " + ref), 0);
             }
             RetryPolicySpec retryPolicy = effective(nodePolicies, declaration.defaultPolicies(),
                     spec.policies(), PolicyBundle::retry);
@@ -288,20 +450,42 @@ public final class WorkflowInterpreter {
                     spec.policies(), PolicyBundle::timeout);
 
             int attempt = 1;
-            java.time.Instant scheduledFor = null; // set on post-retry dispatches (ledger, D3)
+            Instant scheduledFor = null; // set on post-retry dispatches (ledger, D3)
+            OperationResult interruptedResult = null;
+            if (inflight != null) {
+                if (inflight.retryScheduled()) {
+                    // committed RetryScheduled: the stale retry fires immediately (§17 resume)
+                    attempt = inflight.attemptNumber() + 1;
+                    scheduledFor = inflight.scheduledFor();
+                } else {
+                    // dispatched-without-result: normalize through ordinary §17 precedence
+                    attempt = inflight.attemptNumber();
+                    interruptedResult = OperationResult.failure(new ErrorEnvelope("INTERRUPTED",
+                            "attempt " + attempt + " was dispatched but its result was never committed"
+                                    + " (interpreter shutdown)",
+                            true, ErrorEnvelope.ORIGIN_INFRA, null));
+                }
+            }
             while (true) {
-                sink.emit(events.operationDispatched(nodeId, ref, attempt, scheduledFor));
-                OperationResult result = executeAttempt(handler,
-                        new OperationInvocation(workflowRunId, nodeId, ref, attempt),
-                        input, timeoutPolicy);
+                OperationResult result;
+                if (interruptedResult != null) {
+                    result = interruptedResult;
+                    interruptedResult = null;
+                } else {
+                    emit(events.operationDispatched(nodeId, ref, attempt, scheduledFor));
+                    commitDispatchBoundary(nodeId, ref, attempt, scheduledFor);
+                    result = executeAttempt(handler,
+                            new OperationInvocation(workflowRunId, nodeId, ref, attempt),
+                            input, timeoutPolicy);
+                }
 
                 if (result.successful()) {
                     OperationResult.Success success = (OperationResult.Success) result;
                     Object output = success.output();
-                    sink.emit(events.operationSucceeded(nodeId, ref, attempt,
+                    emit(events.operationSucceeded(nodeId, ref, attempt,
                             output != null ? ValueDisclosure.metadataOnly(output) : null,
                             success.usage()));
-                    return new AttemptOutcome(result, null);
+                    return new AttemptOutcome(result, null, attempt);
                 }
                 if (!result.routable()) {
                     // cancelled/aborted: terminate without error-edge evaluation (§17 rules 10–11)
@@ -311,21 +495,22 @@ public final class WorkflowInterpreter {
                         case OperationResult.Aborted a -> a.reason();
                         default -> state;
                     };
-                    return new AttemptOutcome(null, failWorkflow(nodeId, state, reason));
+                    return new AttemptOutcome(null, failWorkflow(nodeId, state, reason), attempt);
                 }
-                sink.emit(events.operationFailed(nodeId, ref, attempt, result));
+                emit(events.operationFailed(nodeId, ref, attempt, result));
                 RetryDecision decision = RetryDecider.decide(retryPolicy, result, attempt);
                 if (decision instanceof RetryDecision.Retry(long delayMillis, String reason)) {
-                    sink.emit(events.retryScheduled(nodeId, ref, attempt, reason, delayMillis, retryPolicy));
+                    emit(events.retryScheduled(nodeId, ref, attempt, reason, delayMillis, retryPolicy));
                     scheduledFor = clock.instant().plusMillis(delayMillis);
+                    commitRetryBoundary(nodeId, ref, attempt, delayMillis, scheduledFor);
                     if (!sleep(delayMillis)) {
                         return new AttemptOutcome(null, failWorkflow(nodeId, "aborted",
-                                "interrupted while waiting to retry"));
+                                "interrupted while waiting to retry"), attempt);
                     }
                     attempt++;
                     continue;
                 }
-                return new AttemptOutcome(result, null); // exhausted → caller routes error edges
+                return new AttemptOutcome(result, null, attempt); // exhausted → caller routes error edges
             }
         }
 
@@ -334,7 +519,9 @@ public final class WorkflowInterpreter {
          * applied. On expiry the worker thread is interrupted best-effort but never
          * joined — a non-cooperative handler may keep running concurrently with the
          * next attempt (documented alpha in-memory semantics; the Operation Contract's
-         * idempotency obligation covers it; durable interpreters revisit at 3.2).
+         * idempotency obligation covers it; the durable interpreter inherits the same
+         * per-attempt supervision — its recovery answer is the INTERRUPTED
+         * normalization plus operation idempotency, not thread supervision).
          */
         private OperationResult executeAttempt(OperationHandler handler, OperationInvocation invocation,
                 Object input, TimeoutPolicySpec timeout) {
@@ -405,9 +592,12 @@ public final class WorkflowInterpreter {
          * Evaluates a node's input map in lexicographic key order (§12); the first
          * failure stops evaluation (§13). Returns {@code Resolved(LinkedHashMap)} —
          * or {@code Resolved(Map.of())} for a null/empty declaration, which callers
-         * translate to a null dispatch input.
+         * translate to a null dispatch input. {@code emitEvents} is false on the
+         * resumed in-flight node: its evaluations were committed with the dispatch
+         * boundary, and re-evaluation is silent recomputation, not a new evaluation.
          */
-        private BindingResolution assembleInput(String nodeId, Map<String, Binding> declared) {
+        private BindingResolution assembleInput(String nodeId, Map<String, Binding> declared,
+                boolean emitEvents) {
             if (declared == null || declared.isEmpty()) {
                 return BindingResolution.resolved(Map.of());
             }
@@ -415,36 +605,44 @@ public final class WorkflowInterpreter {
             for (Map.Entry<String, Binding> entry : new TreeMap<>(declared).entrySet()) {
                 BindingResolution resolution = evaluator.resolve(entry.getValue(), store);
                 if (resolution instanceof BindingResolution.Failed(String reason)) {
-                    sink.emit(events.bindingEvaluated(nodeId, entry.getKey(),
-                            entry.getValue().from(), false, null));
+                    if (emitEvents) {
+                        emit(events.bindingEvaluated(nodeId, entry.getKey(),
+                                entry.getValue().from(), false, null));
+                    }
                     return BindingResolution.failed(reason);
                 }
                 Object value = ((BindingResolution.Resolved) resolution).value();
-                sink.emit(events.bindingEvaluated(nodeId, entry.getKey(),
-                        entry.getValue().from(), true, ValueDisclosure.metadataOnly(value)));
+                if (emitEvents) {
+                    emit(events.bindingEvaluated(nodeId, entry.getKey(),
+                            entry.getValue().from(), true, ValueDisclosure.metadataOnly(value)));
+                }
                 assembled.put(entry.getKey(), value);
             }
             return BindingResolution.resolved(assembled);
         }
 
-        /** Applies contextWrites in lexicographic key order (§14); null = no failure. */
-        private Flow applyContextWrites(TaskSpecNode task) {
+        /**
+         * Applies contextWrites in lexicographic key order (§14); null = no failure.
+         * Applied writes are collected into {@code applied} for the durable checkpoint.
+         */
+        private Flow applyContextWrites(TaskSpecNode task, Map<String, Object> applied) {
             if (task.contextWrites() == null) {
                 return null;
             }
             for (Map.Entry<String, Binding> entry : new TreeMap<>(task.contextWrites()).entrySet()) {
                 BindingResolution resolution = evaluator.resolve(entry.getValue(), store);
                 if (resolution instanceof BindingResolution.Failed(String reason)) {
-                    sink.emit(events.bindingEvaluated(task.id(), entry.getKey(),
+                    emit(events.bindingEvaluated(task.id(), entry.getKey(),
                             entry.getValue().from(), false, null));
                     return failWorkflow(task.id(), "failed", reason);
                 }
                 Object value = ((BindingResolution.Resolved) resolution).value();
                 ValueDisclosure disclosure = ValueDisclosure.metadataOnly(value);
-                sink.emit(events.bindingEvaluated(task.id(), entry.getKey(),
+                emit(events.bindingEvaluated(task.id(), entry.getKey(),
                         entry.getValue().from(), true, disclosure));
                 store = store.put(entry.getKey(), value);
-                sink.emit(events.contextWriteApplied(task.id(), entry.getKey(),
+                applied.put(entry.getKey(), value);
+                emit(events.contextWriteApplied(task.id(), entry.getKey(),
                         entry.getValue().from(), disclosure));
             }
             return null;
@@ -454,7 +652,7 @@ public final class WorkflowInterpreter {
         // Edge selection (§16) and terminal transitions
         // ---------------------------------------------------------------------
 
-        private Flow routeSuccess(String nodeId, String outcome) {
+        private List<WorkflowEdgeSpec> successMatches(String nodeId, String outcome) {
             List<WorkflowEdgeSpec> matches = new ArrayList<>();
             for (WorkflowEdgeSpec edge : spec.edges()) {
                 if (!edge.from().equals(nodeId)) {
@@ -469,17 +667,10 @@ public final class WorkflowInterpreter {
                     matches.add(edge);
                 }
             }
-            return selectExactlyOne(nodeId, matches,
-                    outcome != null ? "decision_outcome_match" : "always");
+            return matches;
         }
 
-        private Flow routeFailure(String nodeId, OperationResult result) {
-            sink.emit(events.nodeCompleted(nodeId, "failed"));
-            ErrorEnvelope error = switch (result) {
-                case OperationResult.Failure f -> f.error();
-                case OperationResult.TimedOut t -> t.error();
-                default -> throw new IllegalStateException("not routable: " + result.status());
-            };
+        private List<WorkflowEdgeSpec> errorMatches(String nodeId, ErrorEnvelope error) {
             List<WorkflowEdgeSpec> matches = new ArrayList<>();
             for (WorkflowEdgeSpec edge : spec.edges()) {
                 if (edge.from().equals(nodeId)
@@ -488,6 +679,26 @@ public final class WorkflowInterpreter {
                     matches.add(edge);
                 }
             }
+            return matches;
+        }
+
+        private static ErrorEnvelope errorOf(OperationResult result) {
+            return switch (result) {
+                case OperationResult.Failure f -> f.error();
+                case OperationResult.TimedOut t -> t.error();
+                default -> throw new IllegalStateException("not routable: " + result.status());
+            };
+        }
+
+        private Flow routeSuccess(String nodeId, String outcome) {
+            return selectExactlyOne(nodeId, successMatches(nodeId, outcome),
+                    outcome != null ? "decision_outcome_match" : "always");
+        }
+
+        private Flow routeFailure(String nodeId, OperationResult result) {
+            emit(events.nodeCompleted(nodeId, "failed"));
+            ErrorEnvelope error = errorOf(result);
+            List<WorkflowEdgeSpec> matches = errorMatches(nodeId, error);
             if (matches.isEmpty()) {
                 return endWorkflow("failed", "unroutable failure: " + error.code(), null);
             }
@@ -504,8 +715,8 @@ public final class WorkflowInterpreter {
         private Flow selectExactlyOne(String nodeId, List<WorkflowEdgeSpec> matches, String reason) {
             if (matches.size() == 1) {
                 WorkflowEdgeSpec edge = matches.get(0);
-                sink.emit(events.edgeSelected(edge, reason));
-                return new Flow.Continue(edge.to());
+                emit(events.edgeSelected(edge, reason));
+                return new Flow.Continue(edge.to(), null);
             }
             String detail = matches.isEmpty()
                     ? "no matching edge from node '" + nodeId + "'"
@@ -519,12 +730,12 @@ public final class WorkflowInterpreter {
          * way mid-node — §9), then the matching workflow terminal event.
          */
         private Flow failWorkflow(String nodeId, String terminalState, String reason) {
-            sink.emit(events.nodeCompleted(nodeId, terminalState));
+            emit(events.nodeCompleted(nodeId, terminalState));
             return endWorkflow(terminalState, reason, null);
         }
 
         private Flow endWorkflow(String terminalState, String reason, Object result) {
-            sink.emit(switch (terminalState) {
+            emit(switch (terminalState) {
                 case "cancelled" -> events.workflowCancelled(reason);
                 case "aborted" -> events.workflowAborted(reason);
                 default -> events.workflowFailed(reason);
