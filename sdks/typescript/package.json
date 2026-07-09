@@ -1,0 +1,65 @@
+{
+  "name": "@markpollack/agent-workflow",
+  "version": "0.1.0-alpha.1",
+  "description": "TypeScript authoring SDK for the agent-workflow Workflow IR (workflow/v2alpha): author, validate, and emit WorkflowSpec JSON executed by the JVM engine",
+  "license": "BUSL-1.1",
+  "author": "Mark Pollack",
+  "type": "module",
+  "keywords": [
+    "workflow",
+    "agents",
+    "ir",
+    "workflow-spec"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/markpollack/agent-workflow"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  },
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint .",
+    "format:check": "prettier --check .",
+    "format": "prettier --write .",
+    "check": "pnpm run lint && pnpm run format:check && pnpm run typecheck && pnpm run test"
+  },
+  "dependencies": {
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1",
+    "canonicalize": "^3.0.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "@types/node": "^20.14.0",
+    "@typescript-eslint/eslint-plugin": "^8.18.0",
+    "@typescript-eslint/parser": "^8.18.0",
+    "eslint": "^9.17.0",
+    "prettier": "^3.4.2",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.18.0",
+    "vitest": "^2.1.8",
+    "@vitest/coverage-v8": "^2.1.8"
+  }
+}

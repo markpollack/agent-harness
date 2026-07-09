@@ -1,0 +1,32 @@
+name: TypeScript SDK
+
+on:
+  push:
+    branches: [main]
+    paths: ["sdks/typescript/**", "spec/**"]
+  pull_request:
+    branches: [main]
+    paths: ["sdks/typescript/**", "spec/**"]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdks/typescript
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: sdks/typescript/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run lint
+      - run: pnpm run format:check
+      - run: pnpm run typecheck
+      - run: pnpm test
