@@ -1,0 +1,572 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/markpollack/agent-workflow/main/spec/workflow-v2alpha.schema.json",
+  "title": "Workflow IR V2 Alpha",
+  "description": "Normative wire-shape schema for the Workflow IR v2-alpha WorkflowSpec (apiVersion workflow/v2alpha). Semantic (cross-field, graph) rules live in spec/rules/semantic-rules.md and are enforced by each SDK's semantic validator; this schema is phase one of two-phase validation. Strict posture per DD-19: additionalProperties is false on every semantic object; the only sanctioned extension points are 'annotations' on metadata and on nodes. Deliberately open objects (types, contextSchema, inputSchema, outputSchema, constants, error details) carry embedded JSON Schema documents or arbitrary user data and are marked with $comment.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "operations",
+    "nodes",
+    "edges",
+    "entrypoint"
+  ],
+  "properties": {
+    "apiVersion": {
+      "type": "string",
+      "const": "workflow/v2alpha"
+    },
+    "kind": {
+      "type": "string",
+      "const": "Workflow"
+    },
+    "metadata": {
+      "$ref": "#/$defs/metadata"
+    },
+    "types": {
+      "type": "object",
+      "$comment": "Deliberately open: named JSON Schema documents referenced via inputSchemaRef."
+    },
+    "constants": {
+      "type": "object",
+      "$comment": "Deliberately open: arbitrary JSON values bound via $const.<key>."
+    },
+    "contextSchema": {
+      "type": "object",
+      "$comment": "Deliberately open: a JSON Schema document describing context shape."
+    },
+    "operations": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "$ref": "#/$defs/operationDeclaration"
+      }
+    },
+    "nodes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/node"
+      }
+    },
+    "edges": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/edge"
+      }
+    },
+    "policies": {
+      "$ref": "#/$defs/policyBundle",
+      "$comment": "Workflow-level default policies. Precedence: node policies > operation defaultPolicies > workflow policies, per whole policy kind (no field-level merging)."
+    },
+    "entrypoint": {
+      "type": "string",
+      "minLength": 1
+    },
+    "outputs": {
+      "$ref": "#/$defs/outputMap"
+    }
+  },
+  "$defs": {
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "labels": {
+          "$ref": "#/$defs/stringMap"
+        },
+        "annotations": {
+          "$ref": "#/$defs/stringMap"
+        }
+      }
+    },
+    "stringMap": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "operationDeclaration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ref"
+      ],
+      "properties": {
+        "ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "inputSchemaRef": {
+          "type": "string",
+          "minLength": 1
+        },
+        "inputSchema": {
+          "type": "object",
+          "$comment": "Deliberately open: a JSON Schema document."
+        },
+        "outputSchema": {
+          "type": "object",
+          "$comment": "Deliberately open: a JSON Schema document."
+        },
+        "execution": {
+          "$ref": "#/$defs/execution"
+        },
+        "defaultPolicies": {
+          "$ref": "#/$defs/policyBundle"
+        }
+      }
+    },
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode"
+      ],
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "request-response"
+          ]
+        }
+      }
+    },
+    "policyBundle": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "retry": {
+          "$ref": "#/$defs/retryPolicy"
+        },
+        "timeout": {
+          "$ref": "#/$defs/timeoutPolicy"
+        }
+      }
+    },
+    "retryPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "maxAttempts"
+      ],
+      "properties": {
+        "maxAttempts": {
+          "type": "integer",
+          "minimum": 1,
+          "$comment": "Total attempts including the first (not retries-after-the-first).",
+          "maximum": 2147483647
+        },
+        "backoff": {
+          "$ref": "#/$defs/backoff"
+        },
+        "retryOn": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/errorMatcher"
+          },
+          "$comment": "Optional error-code matchers. Absent = any retryable error. Combination with error.retryable is AND semantics, pinned in the alpha spec at Step 1.6."
+        }
+      }
+    },
+    "backoff": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "strategy",
+        "initialMillis"
+      ],
+      "properties": {
+        "strategy": {
+          "type": "string",
+          "enum": [
+            "fixed",
+            "exponential"
+          ]
+        },
+        "initialMillis": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "maxMillis": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "multiplier": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      },
+      "$comment": "Deterministic closed-form delays only; no jitter in alpha. Cross-field rules (exponential requires multiplier; initialMillis <= maxMillis) are semantic rules."
+    },
+    "timeoutPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "perAttemptMillis"
+      ],
+      "properties": {
+        "perAttemptMillis": {
+          "type": "integer",
+          "minimum": 1,
+          "$comment": "Per-attempt budget; expiry normalizes the attempt to a timed_out OperationResult.",
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "errorMatcher": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "node": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/taskNode"
+        },
+        {
+          "$ref": "#/$defs/decisionNode"
+        },
+        {
+          "$ref": "#/$defs/terminateNode"
+        }
+      ]
+    },
+    "baseNode": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "kind": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string"
+        },
+        "annotations": {
+          "$ref": "#/$defs/stringMap"
+        }
+      },
+      "required": [
+        "id",
+        "kind"
+      ]
+    },
+    "taskNode": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/baseNode"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "kind",
+            "operation"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "kind": {
+              "const": "task"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": {
+              "type": "string"
+            },
+            "annotations": {
+              "$ref": "#/$defs/stringMap"
+            },
+            "operation": {
+              "type": "string",
+              "minLength": 1
+            },
+            "input": {
+              "$ref": "#/$defs/bindingMap"
+            },
+            "contextWrites": {
+              "$ref": "#/$defs/contextWriteMap"
+            },
+            "policies": {
+              "$ref": "#/$defs/policyBundle"
+            }
+          }
+        }
+      ]
+    },
+    "decisionNode": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/baseNode"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "kind",
+            "operation",
+            "outcomes"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "kind": {
+              "const": "decision"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": {
+              "type": "string"
+            },
+            "annotations": {
+              "$ref": "#/$defs/stringMap"
+            },
+            "operation": {
+              "type": "string",
+              "minLength": 1
+            },
+            "input": {
+              "$ref": "#/$defs/bindingMap"
+            },
+            "outcomes": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "uniqueItems": true
+            },
+            "policies": {
+              "$ref": "#/$defs/policyBundle"
+            }
+          }
+        }
+      ]
+    },
+    "terminateNode": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/baseNode"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "kind",
+            "status"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "kind": {
+              "const": "terminate"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": {
+              "type": "string"
+            },
+            "annotations": {
+              "$ref": "#/$defs/stringMap"
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "completed",
+                "failed",
+                "cancelled",
+                "aborted"
+              ]
+            },
+            "result": {
+              "$ref": "#/$defs/binding"
+            }
+          }
+        }
+      ]
+    },
+    "edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "from",
+        "to",
+        "when"
+      ],
+      "properties": {
+        "from": {
+          "type": "string",
+          "minLength": 1
+        },
+        "to": {
+          "type": "string",
+          "minLength": 1
+        },
+        "when": {
+          "$ref": "#/$defs/edgeCondition"
+        },
+        "label": {
+          "type": "string"
+        }
+      }
+    },
+    "edgeCondition": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/alwaysCondition"
+        },
+        {
+          "$ref": "#/$defs/decisionResultCondition"
+        },
+        {
+          "$ref": "#/$defs/errorCondition"
+        }
+      ]
+    },
+    "alwaysCondition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "const": "always"
+        }
+      }
+    },
+    "decisionResultCondition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value"
+      ],
+      "properties": {
+        "kind": {
+          "const": "decisionResult"
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "errorCondition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "match"
+      ],
+      "properties": {
+        "kind": {
+          "const": "error"
+        },
+        "match": {
+          "$ref": "#/$defs/errorMatch"
+        }
+      }
+    },
+    "errorMatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "retryable": {
+          "type": "boolean"
+        }
+      }
+    },
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "from"
+      ],
+      "properties": {
+        "from": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^\\$(input(\\.[A-Za-z0-9_-]+)?|context\\.[\\x21-\\x7E]+|const\\.[\\x21-\\x7E]+|node\\.[A-Za-z0-9_-]+\\.(output|decision))$",
+          "$comment": "The frozen v2-alpha binding path grammar (alpha spec section 12): bare $input or one top-level key; $context./$const. followed by a literal flat key of printable ASCII (ABNF VCHAR); $node.<id>.output|.decision only - no attribute paths in alpha."
+        }
+      }
+    },
+    "bindingMap": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/binding"
+      }
+    },
+    "contextWriteMap": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/binding"
+      }
+    },
+    "outputMap": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/binding"
+      }
+    }
+  }
+}
