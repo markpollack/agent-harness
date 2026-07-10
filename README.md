@@ -25,9 +25,13 @@ The workflow compiles to a **graph intermediate representation** that separates 
 | `workflow-api` | Core interfaces: `Step`, `AgentContext`, `ContextKey` |
 | `workflow-core` | Workflow DSL, graph IR, executor, edge conditions |
 | `workflow-tools` | Agent tools (Bash, Read, Write, Edit, Glob, Grep) |
-| `workflow-flows` | Built-in flow patterns (sequential, parallel, loop) |
+| `workflow-flows` | Built-in flow patterns (sequential, parallel, loop) + the v2 `.toSpec()` emitter |
 | `workflow-agents` | Ready-to-use agents (AgentLoop, ClaudeStep) |
 | `workflow-examples` | Example workflows and usage patterns |
+| `workflow-spec` | **V2**: the `WorkflowSpec` model, canonical reader/writer, semantic validator |
+| `workflow-engine` | **V2**: the interpreter, operation registry/handler, event stream, `CheckpointStore` SPI |
+| `workflow-engine-jpa` | **V2**: durable `CheckpointStore` (crash recovery, resume) |
+| `sdks/python`, `sdks/typescript` | **V2**: language-neutral authoring SDKs (emit `WorkflowSpec` JSON) |
 
 ## Quick Example
 
@@ -62,6 +66,55 @@ The workflow definition is pure data — nodes and edges, not opaque lambdas. Th
 - **Tracing** — every step transition recorded for observability and behavioral analysis
 - **Quality gates** — `JudgeGate` evaluates output mid-pipeline, routes to retry with verdict feedback
 - **Inspection** — the compiled graph is serializable, walkable, visualizable
+
+## V2: Language-Neutral Workflow IR
+
+V2 (in development on the `v2` branch) turns the graph into a **language-neutral,
+data-only JSON IR** — `WorkflowSpec`, `apiVersion: workflow/v2alpha` — with a JVM
+interpreter and a shared Conformance Kit (`spec/`) that Java, Python, and TypeScript
+all validate against. One IR, many authoring surfaces, one engine.
+
+**Three execution planes** (cleanly separable, independently swappable):
+
+- **Control** — `WorkflowInterpreter` reads the inert spec and decides everything:
+  bindings, dispatch, retries/timeouts, edge selection, events.
+- **Operation** — an `OperationHandler` does *one attempt* of work. Two implementations
+  ship: `StepOperationHandler` (runs a `Step` in-process) and any out-of-process
+  handler you write (subprocess, HTTP, …).
+- **Durability** — a `CheckpointStore` persists progress; the JPA store gives crash
+  recovery and resume with no change to the workflow.
+
+**Author once, emit the IR.** Your existing DSL workflow becomes a portable spec:
+
+```java
+WorkflowSpecEmission emission = Workflow.<String, Object>define("pr-review")
+        .step(fetchDiff).then(analyzeDiff)
+        .branch(a -> approved(a)).then(approve).otherwise(reject)
+        .build()
+        .toSpec();                          // → language-neutral WorkflowSpec JSON
+
+var registry = emission.registerInto(new SimpleOperationRegistry());
+var sink = new InMemoryEventSink();
+var outcome = new WorkflowInterpreter(registry, sink).run(emission.spec(), "run-1", input);
+
+sink.events().forEach(System.out::println);  // the canonical, inspectable event trace
+```
+
+The lambdas are swallowed and auto-registered under deterministic refs — a developer
+who never cares about portability never notices the IR exists. See
+`workflow-examples/.../v2/` for runnable PR-review and issue-triage workflows,
+including an operation served by a separate process.
+
+**Existing `Step` users**: nothing to rewrite. Register your steps and run:
+
+```java
+var registry = new SimpleOperationRegistry()
+        .register("java:my.fetch:v1", new StepOperationHandler(fetchStep))
+        .register("java:my.analyze:v1", new StepOperationHandler(analyzeStep));
+```
+
+Or let `.toSpec()` register them for you (the snippet above). The polyglot SDKs author
+the same `WorkflowSpec` JSON from Python/TypeScript; the JVM engine executes it.
 
 ## Build
 
