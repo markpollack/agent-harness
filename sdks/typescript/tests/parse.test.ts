@@ -47,6 +47,17 @@ describe("parseStrict", () => {
     expect(parseStrict(text)).toEqual(JSON.parse(text));
   });
 
+  it("is not fooled by a value string that mimics a key:value injection", () => {
+    // the value contains `","x":2` — the scanner must treat it as one string, not
+    // a second `x` key (else it would false-positive a duplicate)
+    const text = '{"x":"\\",\\"x\\":2","y":3}';
+    expect(parseStrict(text)).toEqual(JSON.parse(text));
+  });
+
+  it("detects a duplicate key with an escaped quote in the key", () => {
+    expect(() => parseStrict('{"a\\"b":1,"a\\"b":2}')).toThrow(DuplicateKeyError);
+  });
+
   it("propagates malformed JSON as a SyntaxError", () => {
     expect(() => parseStrict("{not json")).toThrow(SyntaxError);
   });
