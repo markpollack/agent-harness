@@ -28,7 +28,7 @@ export const NODE_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
 
 /** The frozen §12 binding path grammar (byte-identical to the schema `binding.from` pattern). */
 export const BINDING_PATTERN =
-  /^\$(input(\.[A-Za-z0-9_-]+)?|context\.[\x21-\x7E]+|const\.[\x21-\x7E]+|node\.[A-Za-z0-9_-]+\.(output|decision))$/;
+  /^\$(input(\.[A-Za-z0-9_-]+)?|item(\.[A-Za-z0-9_-]+)?|itemIndex|context\.[\x21-\x7E]+|const\.[\x21-\x7E]+|node\.[A-Za-z0-9_-]+\.(output|decision))$/;
 
 export const MAX_MILLIS = 9007199254740991; // 2^53 - 1
 export const MAX_ATTEMPTS = 2147483647; // 2^31 - 1

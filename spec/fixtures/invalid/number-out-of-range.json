@@ -1,0 +1,37 @@
+{
+  "apiVersion": "workflow/v2alpha",
+  "kind": "Workflow",
+  "metadata": {
+    "name": "number-out-of-range"
+  },
+  "constants": {
+    "bigId": 100000000000000000000
+  },
+  "operations": {
+    "work": {
+      "ref": "java:test.work:v1"
+    }
+  },
+  "nodes": [
+    {
+      "id": "do",
+      "kind": "task",
+      "operation": "work"
+    },
+    {
+      "id": "done",
+      "kind": "terminate",
+      "status": "completed"
+    }
+  ],
+  "edges": [
+    {
+      "from": "do",
+      "to": "done",
+      "when": {
+        "kind": "always"
+      }
+    }
+  ],
+  "entrypoint": "do"
+}

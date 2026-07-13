@@ -117,6 +117,14 @@ Notes:
 - **Numbers** follow RFC 8785's ECMAScript serialization: `1.0` canonicalizes to `1`,
   `1e2` to `100`, `0.8` stays `0.8`. Emitters may write any valid JSON number; the
   canonical form is what equivalence compares.
+- **Number domain** (Increment 6, SEM-15): a number in an open section (`constants`,
+  `types`, `contextSchema`, operation `inputSchema`/`outputSchema`) whose magnitude
+  exceeds the IEEE-754 safe integer range (2^53−1) is **rejected** (`NUMBER_OUT_OF_RANGE`)
+  — beyond that range the three languages diverge on the canonical form (Python keeps an
+  exact int and refuses; JS/Java round through a double), so all three fail-closed on the
+  same input (the I-JSON rationale). This also rejects large-magnitude floats — the only
+  rule enforceable identically post-parse, since JS/Java cannot distinguish a big-integer
+  literal from a big float. Represent 64-bit IDs and extreme magnitudes as strings.
 - **Duplicate keys** in raw JSON are invalid input: parsers MUST NOT silently
   last-wins (see `rules/semantic-rules.md` SEM-07/SEM-14 implementation notes).
 
@@ -144,7 +152,11 @@ the lowercase §6 forms (`success`, `timed_out`, …).
 `timestamp`; identity fields are class-scoped and strict — workflow-level events carry
 no node/operation/attempt fields, node-level events carry `nodeId` only, attempt-level
 events carry all three. Sequences are **1-based**, monotonic per run; `0` is reserved
-as the "no event committed yet" sentinel.
+as the "no event committed yet" sentinel. **Increment 6** adds two OPTIONAL attempt-level
+fields: `itemIndex` (0-based, on attempt events inside a `fork` fan-out) and `iteration`
+(0-based, on attempt events inside a `loop` body); they **compose** (a fork nested in a
+loop body carries both). Live events keep their real commit-order `sequence` and honest
+interleaving under parallelism.
 
 **Payloads**: per-type required keys and closed vocabularies are in the schema (§9 of
 the alpha spec is the prose form). Vocabularies pinned: `BindingEvaluated.status` ∈
@@ -166,11 +178,26 @@ forms (`metadata_only`, `hmac_hash`) are frozen in the event schema. `type` uses
 JSON-family names; `sizeBytes` is UTF-8 length, reported for strings in v2-alpha.
 
 **Deterministic projection** (what golden streams compare): per event — `sequence`,
-`eventType`, `nodeId?`, `operationRef?`, `attemptNumber?`, `payload?` minus
-`scheduledFor`; excluded — `timestamp`, `attributes`, `workflowRunId`,
+`eventType`, `nodeId?`, `operationRef?`, `attemptNumber?`, `itemIndex?`, `iteration?`,
+`payload?` minus `scheduledFor`; excluded — `timestamp`, `attributes`, `workflowRunId`,
 `workflowSpecRef` (the last two are carried once by the stream document
 `{spec, workflowRunId, events}`). Comparison is canonical byte equality (RFC 8785) of
 the projection document, never host-language tree equality.
+
+**Projection determinism under parallelism** (Increment 6 — the load-bearing rule):
+a `fork` runs its per-item operations concurrently, so the LIVE event order is
+nondeterministic. The projection removes that nondeterminism: within a fork it (1)
+groups events into per-item subsequences (same `nodeId` + `itemIndex`), (2) orders the
+subsequences by `itemIndex` ascending, emitting them as contiguous blocks, and (3)
+**renumbers `sequence` 1..N over the reordered stream** — the live commit-order sequence
+values are replaced. Without the renumber, two runs with different real interleavings
+keep different sequence values and the projection bytes differ. A conforming interpreter
+run twice with *forced-opposite item completion order* MUST produce a byte-identical
+projection (the differential-interleaving test). The join is the ordered commit barrier;
+its collected output list is ordered by `itemIndex`, never completion order. A `loop`
+body's events carry `iteration`; `$node.<id>.output`/`.decision` for a loop-body node
+resolves to the **latest committed iteration's** output (a not-yet-executed iteration is
+a deterministic missing-source failure, never null).
 
 **Golden streams** (`events/*.events.json`): `golden-pr-review` (success path, includes
 a usage-bearing OperationSucceeded), `golden-pr-review-fail-path` (decision routing to

@@ -33,6 +33,7 @@ public final class WorkflowSpecValidator {
     public static final String GRAPH_CYCLE = "GRAPH_CYCLE";
     public static final String BINDING_UNKNOWN_NODE = "BINDING_UNKNOWN_NODE";
     public static final String INVALID_BACKOFF = "INVALID_BACKOFF";
+    public static final String NUMBER_OUT_OF_RANGE = "NUMBER_OUT_OF_RANGE";
 
     /** Validates the spec, returning every violation found (empty = semantically valid). */
     public List<ValidationError> validate(WorkflowSpec spec) {
@@ -198,7 +199,57 @@ public final class WorkflowSpecValidator {
             validatePolicies(policies, "nodes[id=" + node.id() + "].policies", errors);
         }
 
+        // SEM-15 open-section numbers must be within IEEE-754 safe integer range
+        checkNumberDomain(spec.constants(), "constants", errors);
+        checkNumberDomain(spec.types(), "types", errors);
+        checkNumberDomain(spec.contextSchema(), "contextSchema", errors);
+        for (Map.Entry<String, OperationDeclaration> entry : spec.operations().entrySet()) {
+            checkNumberDomain(entry.getValue().inputSchema(),
+                    "operations[" + entry.getKey() + "].inputSchema", errors);
+            checkNumberDomain(entry.getValue().outputSchema(),
+                    "operations[" + entry.getKey() + "].outputSchema", errors);
+        }
+
         return List.copyOf(errors);
+    }
+
+    /**
+     * SEM-15: rejects any number in an open section whose magnitude exceeds the IEEE-754
+     * safe integer range (2^53−1). Beyond this range Python (exact int), JS (rounded
+     * double), and Java (rounded double) diverge on the canonical form; forbidding it
+     * makes all three fail-closed on the same input (I-JSON rationale). Note it also
+     * rejects large-magnitude floats — the only rule enforceable identically post-parse,
+     * since JS/Java cannot distinguish a big-integer literal from a big float. Extreme
+     * magnitudes belong in strings on the wire.
+     */
+    private static void checkNumberDomain(
+            com.fasterxml.jackson.databind.JsonNode section, String path, List<ValidationError> errors) {
+        if (section == null) {
+            return;
+        }
+        scanNumbers(section, path, errors);
+    }
+
+    private static final java.math.BigDecimal SAFE_INT_MAX =
+            java.math.BigDecimal.valueOf(9007199254740991L);
+
+    private static void scanNumbers(
+            com.fasterxml.jackson.databind.JsonNode node, String path, List<ValidationError> errors) {
+        if (node.isNumber()) {
+            java.math.BigDecimal magnitude = node.decimalValue().abs();
+            if (magnitude.compareTo(SAFE_INT_MAX) > 0) {
+                errors.add(new ValidationError(NUMBER_OUT_OF_RANGE, path,
+                        "number " + node.asText()
+                                + " is outside the IEEE-754 safe integer range (2^53-1); "
+                                + "represent large values as strings"));
+            }
+        } else if (node.isObject()) {
+            node.properties().forEach(e -> scanNumbers(e.getValue(), path + "." + e.getKey(), errors));
+        } else if (node.isArray()) {
+            for (int i = 0; i < node.size(); i++) {
+                scanNumbers(node.get(i), path + "[" + i + "]", errors);
+            }
+        }
     }
 
     private static String edgePath(WorkflowEdgeSpec edge) {

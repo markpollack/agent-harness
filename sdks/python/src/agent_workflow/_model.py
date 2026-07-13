@@ -88,6 +88,8 @@ class Binding:
 
     _GRAMMAR: ClassVar[re.Pattern[str]] = re.compile(
         r"^\$(input(\.[A-Za-z0-9_-]+)?"
+        r"|item(\.[A-Za-z0-9_-]+)?"
+        r"|itemIndex"
         r"|context\.[\x21-\x7E]+"
         r"|const\.[\x21-\x7E]+"
         r"|node\.[A-Za-z0-9_-]+\.(output|decision))$"

@@ -88,6 +88,7 @@ def validate(spec: WorkflowSpec) -> list[ValidationError]:
     _sem_11_cycles(valid_edges, errors)
     _sem_12_binding_node_refs(spec, node_ids, errors)
     _sem_13_backoff(spec, errors)
+    _sem_15_number_domain(spec, errors)
     return errors
 
 
@@ -339,6 +340,50 @@ def _sem_13_backoff(spec: WorkflowSpec, errors: list[ValidationError]) -> None:
                     code="INVALID_BACKOFF", path=f"{site}.retry.backoff", message=violation
                 )
             )
+
+
+_SAFE_INT_MAX = 2**53 - 1
+
+
+def _sem_15_number_domain(spec: WorkflowSpec, errors: list[ValidationError]) -> None:
+    """SEM-15: open-section numbers must be within the IEEE-754 safe integer range.
+
+    Beyond 2^53-1 the three languages diverge on the canonical form (Python keeps an
+    exact int; JS/Java round through a double); forbidding it makes all three
+    fail-closed on the same input (I-JSON). Also rejects large-magnitude floats — the
+    only rule enforceable identically post-parse.
+    """
+    sites: list[tuple[str, Any]] = [
+        ("constants", spec.constants),
+        ("types", spec.types),
+        ("contextSchema", spec.context_schema),
+    ]
+    for alias, decl in spec.operations.items():
+        sites.append((f"operations[{alias}].inputSchema", decl.input_schema))
+        sites.append((f"operations[{alias}].outputSchema", decl.output_schema))
+    for path, section in sites:
+        if section is not None:
+            _scan_numbers(section, path, errors)
+
+
+def _scan_numbers(value: Any, path: str, errors: list[ValidationError]) -> None:
+    if isinstance(value, bool):
+        return
+    if isinstance(value, (int, float)) and abs(value) > _SAFE_INT_MAX:
+        errors.append(
+            ValidationError(
+                code="NUMBER_OUT_OF_RANGE",
+                path=path,
+                message=f"number {value} is outside the IEEE-754 safe integer range "
+                "(2^53-1); represent large values as strings",
+            )
+        )
+    elif isinstance(value, dict):
+        for key, sub in value.items():
+            _scan_numbers(sub, f"{path}.{key}", errors)
+    elif isinstance(value, list):
+        for i, sub in enumerate(value):
+            _scan_numbers(sub, f"{path}[{i}]", errors)
 
 
 def _backoff_violations(backoff: Backoff) -> list[str]:

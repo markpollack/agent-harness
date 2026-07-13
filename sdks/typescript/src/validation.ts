@@ -71,6 +71,7 @@ export function validate(spec: WorkflowSpec): ValidationError[] {
   sem11Cycles(validEdges, errors);
   sem12BindingNodeRefs(spec, nodeIds, errors);
   sem13Backoff(spec, errors);
+  sem15NumberDomain(spec, errors);
   return errors;
 }
 
@@ -329,6 +330,46 @@ function sem13Backoff(spec: WorkflowSpec, errors: ValidationError[]): void {
     for (const message of backoffViolations(backoff)) {
       errors.push({ code: "INVALID_BACKOFF", path: `${site}.retry.backoff`, message });
     }
+  }
+}
+
+const SAFE_INT_MAX = 2 ** 53 - 1;
+
+/**
+ * SEM-15: open-section numbers must be within the IEEE-754 safe integer range. Beyond
+ * 2^53-1 the three languages diverge on the canonical form (Python exact int; JS/Java
+ * rounded double); forbidding it makes all three fail-closed on the same input (I-JSON).
+ * (`JSON.parse` has already rounded a big-int literal, but the rounded value is still
+ * out of range, so the check fires.) Also rejects large-magnitude floats.
+ */
+function sem15NumberDomain(spec: WorkflowSpec, errors: ValidationError[]): void {
+  const sites: Array<[string, unknown]> = [
+    ["constants", spec.constants],
+    ["types", spec.types],
+    ["contextSchema", spec.contextSchema],
+  ];
+  for (const [alias, decl] of Object.entries(spec.operations)) {
+    sites.push([`operations[${alias}].inputSchema`, decl.inputSchema]);
+    sites.push([`operations[${alias}].outputSchema`, decl.outputSchema]);
+  }
+  for (const [path, section] of sites) {
+    if (section !== undefined) scanNumbers(section, path, errors);
+  }
+}
+
+function scanNumbers(value: unknown, path: string, errors: ValidationError[]): void {
+  if (typeof value === "number") {
+    if (Math.abs(value) > SAFE_INT_MAX) {
+      errors.push({
+        code: "NUMBER_OUT_OF_RANGE",
+        path,
+        message: `number ${value} is outside the IEEE-754 safe integer range (2^53-1); represent large values as strings`,
+      });
+    }
+  } else if (Array.isArray(value)) {
+    value.forEach((sub, i) => scanNumbers(sub, `${path}[${i}]`, errors));
+  } else if (value !== null && typeof value === "object") {
+    for (const [key, sub] of Object.entries(value)) scanNumbers(sub, `${path}.${key}`, errors);
   }
 }
 

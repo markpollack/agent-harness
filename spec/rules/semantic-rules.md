@@ -31,10 +31,19 @@
 | SEM-08 | nodes | node is not reachable from `entrypoint` following edges (evaluated only when SEM-06 passes) | `UNREACHABLE_NODE` | `nodes[id=<id>]` |
 | SEM-09 | decision nodes | a declared outcome has **no** decisionResult edge — guaranteed runtime edge-selection failure (§16) | `UNMATCHED_OUTCOME` | `nodes[id=<id>].outcomes` |
 | SEM-10 | decision nodes | a declared outcome has **more than one** decisionResult edge — guaranteed runtime multi-match failure (§16) | `DUPLICATE_OUTCOME_EDGE` | `nodes[id=<id>].outcomes` |
-| SEM-11 | edges | the graph contains a directed cycle. Alpha graphs are DAGs: checkpoint identity `(workflowRunId, nodeId)` presumes at-most-once node execution; iteration arrives with the post-alpha `loop` node kind, never via back-edges | `GRAPH_CYCLE` | `edges` (message carries one witness cycle `a -> b -> a`) |
+| SEM-11 | edges | the graph contains a directed cycle. Alpha graphs are DAGs: checkpoint identity `(workflowRunId, nodeId)` presumes at-most-once node execution. **Increment-6 relaxation**: a single `decisionResult:"continue"` back-edge FROM a `loop` node into its body is legal (declared, bounded iteration, keyed `(runId, nodeId, iteration)`); all other cycles remain violations | `GRAPH_CYCLE` | `edges` (message carries one witness cycle `a -> b -> a`) |
 | SEM-12 | all bindings (`input`, `contextWrites`, terminate `result`, workflow `outputs`) | a `$node.<id>...` binding references no existing node id | `BINDING_UNKNOWN_NODE` | `<owner path>.<binding key>` |
 | SEM-13 | every policy attachment site (workflow `policies`, operation `defaultPolicies`, node `policies`) | `exponential` backoff without `multiplier`, or `initialMillis > maxMillis` when both present | `INVALID_BACKOFF` | `<site>.retry.backoff` |
 | SEM-14 | node `input` bindings | the same input parameter is bound more than once within a single node | `DUPLICATE_BINDING_TARGET` | `nodes[id=<id>].input.<key>` |
+| SEM-15 | open sections (`constants`, `types`, `contextSchema`, operation `inputSchema`/`outputSchema`) | a number whose magnitude exceeds the IEEE-754 safe integer range (2^53−1). Beyond this range Python (exact int), JS (rounded double), and Java (rounded double) diverge on the canonical form; forbidding it makes all three fail-closed on the same input (I-JSON). Also rejects large-magnitude floats — the only rule enforceable identically post-parse (JS/Java cannot distinguish a big-integer literal from a big float); extreme magnitudes belong in strings | `NUMBER_OUT_OF_RANGE` | `<section>.<path to the number>` |
+| SEM-16 | `fork` nodes | the node's `join` names no `join` node | `FORK_UNKNOWN_JOIN` | `nodes[id=<id>].join` |
+| SEM-17 | `join` nodes | a join is referenced by ≠ 1 fork's `join` field | `JOIN_ARITY` | `nodes[id=<id>]` |
+| SEM-18 | `loop` nodes | the node lacks exactly one outgoing `decisionResult:"continue"` edge (the body back-edge) and one `decisionResult:"exit"` edge | `LOOP_EDGE_SHAPE` | `nodes[id=<id>]` |
+
+> **Increment 6 (2026-07-13)** added SEM-15 (enforced now, all three SDKs + engine) and
+> SEM-16/17/18 + the SEM-11 relaxation (fork/join/loop well-formedness — enforced as the
+> Java model (6.2) and SDK models (6.5) gain the new node kinds; the rows are contract
+> now so validators trace to them row-for-row).
 
 ## Implementation notes per language
 
