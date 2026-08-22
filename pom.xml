@@ -56,7 +56,8 @@
 
         <!-- Versions -->
         <reactor.version>3.7.2</reactor.version>
-        <jackson.version>2.21.2</jackson.version>
+        <jackson.version>2.21.6</jackson.version>
+        <json-schema-validator.version>3.0.7</json-schema-validator.version>
         <junit.version>5.11.4</junit.version>
         <assertj.version>3.27.3</assertj.version>
         <slf4j.version>2.0.16</slf4j.version>
@@ -88,9 +89,16 @@
             <dependency>
                 <groupId>tools.jackson</groupId>
                 <artifactId>jackson-bom</artifactId>
-                <version>3.1.4</version>
+                <version>3.1.6</version>
                 <type>pom</type>
                 <scope>import</scope>
+            </dependency>
+
+            <!-- Security floor for transitive Spring AI / MCP consumers -->
+            <dependency>
+                <groupId>com.networknt</groupId>
+                <artifactId>json-schema-validator</artifactId>
+                <version>${json-schema-validator.version}</version>
             </dependency>
 
             <!-- Internal modules -->

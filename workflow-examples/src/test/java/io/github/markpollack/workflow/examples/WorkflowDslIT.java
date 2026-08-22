@@ -19,13 +19,19 @@ import io.github.markpollack.workflow.flows.Step;
 import io.github.markpollack.workflow.flows.steps.ClaudeStep;
 import io.github.markpollack.workflow.flows.workflow.RunOptions;
 import io.github.markpollack.workflow.flows.workflow.Workflow;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 
+import java.io.File;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
  * Integration tests that exercise the Workflow DSL with real LLM calls via
@@ -41,6 +47,23 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DisabledIfEnvironmentVariable(named = "CLAUDECODE", matches = ".+",
         disabledReason = "Cannot nest Claude CLI sessions inside Claude Code")
 class WorkflowDslIT {
+
+    @BeforeEach
+    void requireClaudeCli() {
+        assumeTrue(isCommandAvailable("claude"),
+                "Claude CLI must be available for live Workflow DSL integration tests");
+    }
+
+    private static boolean isCommandAvailable(String command) {
+        String path = System.getenv("PATH");
+        if (path == null || path.isBlank()) {
+            return false;
+        }
+        return Arrays.stream(path.split(File.pathSeparator))
+                .map(Path::of)
+                .map(directory -> directory.resolve(command))
+                .anyMatch(candidate -> Files.isRegularFile(candidate) && Files.isExecutable(candidate));
+    }
 
     /**
      * Branch routing: Claude classifies input, deterministic predicate routes
