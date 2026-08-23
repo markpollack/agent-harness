@@ -15,6 +15,28 @@
     <description>Composable step-based flow combinators for agent workflows (sequential, parallel, loop)</description>
 
     <dependencies>
+        <!-- Consumer-visible floors for runtime families otherwise governed only by the parent. -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <version>${jackson.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>tools.jackson.core</groupId>
+            <artifactId>jackson-core</artifactId>
+            <version>${jackson3.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>tools.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <version>${jackson3.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.networknt</groupId>
+            <artifactId>json-schema-validator</artifactId>
+            <version>${json-schema-validator.version}</version>
+        </dependency>
+
         <!-- workflow-api provides AgentContext, ContextKey, AgentHandler -->
         <dependency>
             <groupId>io.github.markpollack</groupId>
@@ -31,12 +53,6 @@
         <dependency>
             <groupId>org.springframework.ai</groupId>
             <artifactId>spring-ai-client-chat</artifactId>
-        </dependency>
-
-        <!-- Jackson for ClaudeStep MCP config serialization -->
-        <dependency>
-            <groupId>com.fasterxml.jackson.core</groupId>
-            <artifactId>jackson-databind</artifactId>
         </dependency>
 
         <!-- A2A Protocol SDK (optional — A2AStep remote agent invocation) -->

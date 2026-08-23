@@ -15,6 +15,28 @@
     <description>Crash-resistant durability layer for agent workflows (CheckpointingStepRunner, JDBC persistence)</description>
 
     <dependencies>
+        <!-- Consumer-visible floors for runtime families otherwise governed only by the parent. -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <version>${jackson.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>tools.jackson.core</groupId>
+            <artifactId>jackson-core</artifactId>
+            <version>${jackson3.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>tools.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <version>${jackson3.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.networknt</groupId>
+            <artifactId>json-schema-validator</artifactId>
+            <version>${json-schema-validator.version}</version>
+        </dependency>
+
         <!-- workflow-flows provides Step, StepRunner, AgentContext -->
         <dependency>
             <groupId>io.github.markpollack</groupId>
@@ -51,12 +73,6 @@
             <artifactId>spring-jdbc</artifactId>
             <version>6.2.5</version>
             <optional>true</optional>
-        </dependency>
-
-        <!-- Jackson for output serialization -->
-        <dependency>
-            <groupId>com.fasterxml.jackson.core</groupId>
-            <artifactId>jackson-databind</artifactId>
         </dependency>
 
         <!-- Logging -->

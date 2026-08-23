@@ -15,6 +15,18 @@
     <description>Reusable tools for AI agents: file operations, shell execution, search</description>
 
     <dependencies>
+        <!-- Consumer-visible floors for runtime families otherwise governed only by the parent. -->
+        <dependency>
+            <groupId>tools.jackson.core</groupId>
+            <artifactId>jackson-core</artifactId>
+            <version>${jackson3.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>tools.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <version>${jackson3.version}</version>
+        </dependency>
+
         <!-- Spring AI for @Tool annotation -->
         <dependency>
             <groupId>org.springframework.ai</groupId>
