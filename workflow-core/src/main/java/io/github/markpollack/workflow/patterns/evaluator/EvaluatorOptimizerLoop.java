@@ -18,12 +18,12 @@ package io.github.markpollack.workflow.patterns.evaluator;
 import io.github.markpollack.workflow.core.LoopPattern;
 import io.github.markpollack.workflow.core.LoopState;
 import io.github.markpollack.workflow.core.TerminationReason;
+import io.github.markpollack.workflow.patterns.judge.ScoreText;
 import io.github.markpollack.workflow.patterns.judge.SpringAiJuryAdapter;
 import io.github.markpollack.workflow.strategy.TerminationStrategy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import io.github.markpollack.judge.jury.Verdict;
-import io.github.markpollack.judge.score.Scores;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.tool.ToolCallback;
@@ -32,7 +32,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
+import java.util.OptionalDouble;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -87,11 +87,14 @@ public class EvaluatorOptimizerLoop implements LoopPattern<EvaluatorOptimizerRes
 
     /**
      * Record of a single trial in the loop.
+     *
+     * @param score the trial's measured score, or empty when nothing was measured — no jury
+     * ran, the jury threw, or the jury reached no finding
      */
     public record TrialRecord(
             int trialNumber,
             String output,
-            double score,
+            OptionalDouble score,
             boolean passed,
             String reflection,
             Duration duration
@@ -104,9 +107,9 @@ public class EvaluatorOptimizerLoop implements LoopPattern<EvaluatorOptimizerRes
         default void onLoopStarted(String runId, String userMessage) {}
         default void onTrialStarted(String runId, int trial) {}
         default void onActorCompleted(String runId, int trial, String output) {}
-        default void onEvaluationCompleted(String runId, int trial, double score, boolean passed) {}
+        default void onEvaluationCompleted(String runId, int trial, OptionalDouble score, boolean passed) {}
         default void onReflectionCompleted(String runId, int trial, String reflection) {}
-        default void onTrialCompleted(String runId, int trial, double score) {}
+        default void onTrialCompleted(String runId, int trial, OptionalDouble score) {}
         default void onLoopCompleted(String runId, TerminationReason reason) {}
         default void onLoopFailed(String runId, Throwable error) {}
     }
@@ -132,7 +135,7 @@ public class EvaluatorOptimizerLoop implements LoopPattern<EvaluatorOptimizerRes
 
             notifyLoopCompleted(runId, result.reason);
             log.info("Evaluator-optimizer loop completed: totalTrials={}, bestScore={}, reason={}",
-                    result.trials.size(), result.bestScore, result.reason.name());
+                    result.trials.size(), ScoreText.describe(result.bestScore), result.reason.name());
 
             return EvaluatorOptimizerResult.terminated(
                     runId,
@@ -175,7 +178,9 @@ public class EvaluatorOptimizerLoop implements LoopPattern<EvaluatorOptimizerRes
         String currentReflection = "";
         String bestOutput = null;
         String bestReflection = null;
-        double bestScore = 0.0;
+        // Absent until some trial measures something. Starting at 0.0 would make a run nobody
+        // measured indistinguishable from a run measured at the bottom of the scale.
+        OptionalDouble bestScore = OptionalDouble.empty();
         TerminationReason terminationReason = TerminationReason.NOT_TERMINATED;
         LoopState currentState = state;
 
@@ -234,8 +239,11 @@ public class EvaluatorOptimizerLoop implements LoopPattern<EvaluatorOptimizerRes
                 break;
             }
 
-            // Phase 2: Evaluator - Judge the output
-            double score = 0.0;
+            // Phase 2: Evaluator - Judge the output.
+            // The trial's score is absent until a jury actually measures something. A jury that
+            // was never configured, a jury that threw, and a jury that abstained or errored all
+            // leave it absent — none of them measured zero.
+            OptionalDouble score = OptionalDouble.empty();
             boolean passed = false;
             String reasoning = "No jury configured";
             Verdict verdict = null;
@@ -248,11 +256,11 @@ public class EvaluatorOptimizerLoop implements LoopPattern<EvaluatorOptimizerRes
 
                     if (verdict != null) {
                         passed = verdict.aggregated().pass();
-                        score = Scores.toNormalized(verdict.aggregated().score(), Map.of());
+                        score = verdict.aggregated().effectiveScore();
                         reasoning = verdict.aggregated().reasoning();
                     }
                     log.debug("Trial {} evaluator phase completed: score={}, passed={}",
-                            trial, score, passed);
+                            trial, ScoreText.describe(score), passed);
                 } catch (Exception e) {
                     log.error("Evaluator phase failed in trial {}: {}", trial,
                             e.getMessage() != null ? e.getMessage() : "Unknown");
@@ -260,11 +268,13 @@ public class EvaluatorOptimizerLoop implements LoopPattern<EvaluatorOptimizerRes
             }
 
             notifyEvaluationCompleted(state.runId(), trial, score, passed);
-            scoreHistory.add(score);
-            log.debug("Trial {} score: {}", trial, score);
+            // An unmeasured trial is not a data point: recording it would let stuck detection
+            // read a run of abstentions as a run of zeroes that never improved.
+            score.ifPresent(scoreHistory::add);
+            log.debug("Trial {} score: {}", trial, ScoreText.describe(score));
 
             // Update best
-            if (score > bestScore) {
+            if (score.isPresent() && (bestScore.isEmpty() || score.getAsDouble() > bestScore.getAsDouble())) {
                 bestScore = score;
                 bestOutput = actorOutput;
                 bestReflection = currentReflection;
@@ -276,7 +286,7 @@ public class EvaluatorOptimizerLoop implements LoopPattern<EvaluatorOptimizerRes
                 break;
             }
 
-            if (!config.requirePass() && score >= config.scoreThreshold()) {
+            if (!config.requirePass() && score.isPresent() && score.getAsDouble() >= config.scoreThreshold()) {
                 terminationReason = TerminationReason.SCORE_THRESHOLD_MET;
                 break;
             }
@@ -319,7 +329,7 @@ public class EvaluatorOptimizerLoop implements LoopPattern<EvaluatorOptimizerRes
             notifyTrialCompleted(state.runId(), trial, score);
 
             log.debug("Trial {} completed: score={}, passed={}, duration={}ms",
-                    trial, score, passed, trialDuration.toMillis());
+                    trial, ScoreText.describe(score), passed, trialDuration.toMillis());
         }
 
         // Handle max trials reached
@@ -336,7 +346,7 @@ public class EvaluatorOptimizerLoop implements LoopPattern<EvaluatorOptimizerRes
     private String buildReflectionPrompt(
             String actorOutput,
             Verdict verdict,
-            double score,
+            OptionalDouble score,
             String reasoning,
             int trial,
             List<Double> scoreHistory
@@ -344,7 +354,9 @@ public class EvaluatorOptimizerLoop implements LoopPattern<EvaluatorOptimizerRes
         StringBuilder prompt = new StringBuilder();
         prompt.append("You are a reflector analyzing the output of an AI agent.\n\n");
         prompt.append("Trial: ").append(trial).append("\n");
-        prompt.append("Score: ").append(String.format("%.2f", score)).append("\n");
+        // Telling the reflector "0.00" for a trial nobody scored would invite it to reflect on
+        // a failure that was never measured.
+        prompt.append("Score: ").append(ScoreText.describe(score)).append("\n");
         prompt.append("Score history: ").append(scoreHistory).append("\n\n");
         prompt.append("Agent output:\n").append(actorOutput).append("\n\n");
         prompt.append("Evaluation reasoning:\n").append(reasoning).append("\n\n");
@@ -450,7 +462,7 @@ public class EvaluatorOptimizerLoop implements LoopPattern<EvaluatorOptimizerRes
             LoopState state,
             List<TrialRecord> trials,
             String bestOutput,
-            double bestScore,
+            OptionalDouble bestScore,
             String bestReflection,
             TerminationReason reason
     ) {}
@@ -487,7 +499,7 @@ public class EvaluatorOptimizerLoop implements LoopPattern<EvaluatorOptimizerRes
         }
     }
 
-    private void notifyEvaluationCompleted(String runId, int trial, double score, boolean passed) {
+    private void notifyEvaluationCompleted(String runId, int trial, OptionalDouble score, boolean passed) {
         for (var listener : listeners) {
             try {
                 listener.onEvaluationCompleted(runId, trial, score, passed);
@@ -507,7 +519,7 @@ public class EvaluatorOptimizerLoop implements LoopPattern<EvaluatorOptimizerRes
         }
     }
 
-    private void notifyTrialCompleted(String runId, int trial, double score) {
+    private void notifyTrialCompleted(String runId, int trial, OptionalDouble score) {
         for (var listener : listeners) {
             try {
                 listener.onTrialCompleted(runId, trial, score);

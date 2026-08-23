@@ -19,13 +19,13 @@ import io.github.markpollack.workflow.core.LoopPattern;
 import io.github.markpollack.workflow.core.LoopState;
 import io.github.markpollack.workflow.core.TerminationReason;
 import io.github.markpollack.workflow.core.ToolCallListener;
+import io.github.markpollack.workflow.patterns.judge.ScoreText;
 import io.github.markpollack.workflow.patterns.judge.SpringAiJuryAdapter;
 import io.github.markpollack.workflow.strategy.TerminationStrategy;
 import io.github.markpollack.workflow.strategy.TerminationStrategy.TerminationResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import io.github.markpollack.judge.jury.Verdict;
-import io.github.markpollack.judge.score.Scores;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.tool.ToolCallback;
@@ -33,7 +33,7 @@ import org.springframework.ai.tool.ToolCallback;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
+import java.util.OptionalDouble;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -314,21 +314,23 @@ public class TurnLimitedLoop implements LoopPattern<TurnLimitedResult> {
 
         // Evaluate with jury (synchronous call)
         Verdict verdict = juryAdapter.evaluate(state, response, config.workingDirectory());
-        double score = Scores.toNormalized(verdict.aggregated().score(), Map.of());
+        OptionalDouble score = verdict.aggregated().effectiveScore();
 
         if (verdict.aggregated().pass()) {
             return PostTurnCheck.terminate(
                     TerminationReason.SCORE_THRESHOLD_MET,
                     verdict,
-                    String.format("Jury passed with score %.2f", score)
+                    String.format("Jury passed with score %s", ScoreText.describe(score))
             );
         }
 
-        if (config.scoreThreshold() > 0 && score >= config.scoreThreshold()) {
+        // An aggregate that made no measurement has no score to compare against the threshold,
+        // so the loop takes another turn rather than terminating on a value it never received.
+        if (config.scoreThreshold() > 0 && score.isPresent() && score.getAsDouble() >= config.scoreThreshold()) {
             return PostTurnCheck.terminate(
                     TerminationReason.SCORE_THRESHOLD_MET,
                     verdict,
-                    String.format("Score %.2f >= threshold %.2f", score, config.scoreThreshold())
+                    String.format("Score %.2f >= threshold %.2f", score.getAsDouble(), config.scoreThreshold())
             );
         }
 

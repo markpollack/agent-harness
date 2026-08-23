@@ -177,12 +177,12 @@ class TurnLimitedResultTest {
     class QueryMethods {
 
         @Test
-        @DisplayName("finalScore() should return 0.0 when no verdict")
-        void finalScoreShouldReturnZeroWhenNoVerdict() {
+        @DisplayName("finalScore() should be absent when no verdict — a run nobody judged has no score, not a score of zero")
+        void finalScoreShouldBeAbsentWhenNoVerdict() {
             TurnLimitedResult result = TurnLimitedResult.success(
                     "test-run-id", "done", state, null);
 
-            assertThat(result.finalScore()).isEqualTo(0.0);
+            assertThat(result.finalScore()).isEmpty();
         }
 
         @Test

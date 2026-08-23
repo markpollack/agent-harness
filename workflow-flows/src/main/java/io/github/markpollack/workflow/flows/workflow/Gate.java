@@ -20,22 +20,31 @@ import io.github.markpollack.workflow.core.AgentContext;
 public interface Gate<O> {
 
     /**
-     * Evaluates the output and returns a routing decision.
+     * Evaluates the output.
+     * <p>
+     * The return is a {@link GateAssessment} rather than a bare {@link GateDecision} because a
+     * returned jury verdict does not always contain a pass/fail finding. The assessment represents
+     * every status of a returned verdict; it does not represent unchecked failures that occur
+     * before a verdict exists. A gate that always decides — an approval, a predicate — says so
+     * with {@link GateAssessment#decided(GateDecision)}.
      *
      * @param ctx    the execution context
      * @param output the output to evaluate
-     * @return the gate decision (PASS, FAIL, ESCALATE, or TIMEOUT)
+     * @return what this gate concluded
      */
-    GateDecision evaluate(AgentContext ctx, O output);
+    GateAssessment evaluate(AgentContext ctx, O output);
 
     /**
-     * Called by the executor immediately after {@link #evaluate}, before routing.
-     * Override to write gate results (judgment, score, decision) to context under typed keys,
-     * eliminating the need for a separate step to record gate output.
+     * Called by the executor immediately after {@link #evaluate} reaches a decision, before
+     * routing. Override to write gate results (judgment, score, decision) to context under typed
+     * keys, eliminating the need for a separate step to record gate output.
+     * <p>
+     * An evaluation that reached no decision never arrives here — there is no decision to pass —
+     * and the executor writes its verdict evidence itself.
      *
      * @param ctx      the current context
      * @param output   the output that was evaluated
-     * @param decision the decision returned by {@link #evaluate}
+     * @param decision the decision {@link #evaluate} reached
      * @return updated context (or {@code ctx} unchanged if nothing to write)
      */
     default AgentContext updateContext(AgentContext ctx, O output, GateDecision decision) {

@@ -18,10 +18,9 @@ package io.github.markpollack.workflow.patterns.advisor;
 import io.github.markpollack.workflow.core.LoopState;
 import io.github.markpollack.workflow.core.TerminationReason;
 import io.github.markpollack.judge.jury.Verdict;
-import io.github.markpollack.judge.score.Scores;
 import org.springframework.ai.chat.client.ChatClientResponse;
 
-import java.util.Map;
+import java.util.OptionalDouble;
 
 /**
  * Exception thrown when jury evaluation passes (successful completion).
@@ -59,20 +58,23 @@ public class JuryPassedException extends AgentLoopTerminatedException {
     }
 
     /**
-     * Returns the aggregated score from the verdict as a normalized value (0.0 to 1.0).
+     * Returns the aggregated score from the verdict as a normalized value (0.0 to 1.0), or
+     * empty when the jury passed without measuring anything.
+     * <p>
+     * Absence here is not a score of zero: a judge that reports an outcome and no measurement
+     * is ordinary, and this exception is only ever raised on a passing verdict.
      */
-    public double getScore() {
-        if (verdict == null || verdict.aggregated() == null || verdict.aggregated().score() == null) {
-            return 0.0;
-        }
-        return Scores.toNormalized(verdict.aggregated().score(), Map.of());
+    public OptionalDouble getScore() {
+        return verdict == null ? OptionalDouble.empty() : verdict.aggregated().effectiveScore();
     }
 
     private static String formatMessage(Verdict verdict) {
-        if (verdict == null || verdict.aggregated() == null || verdict.aggregated().score() == null) {
+        if (verdict == null) {
             return "Jury passed";
         }
-        double score = Scores.toNormalized(verdict.aggregated().score(), Map.of());
-        return String.format("Jury passed with score %.2f", score);
+        OptionalDouble score = verdict.aggregated().effectiveScore();
+        return score.isPresent()
+                ? String.format("Jury passed with score %.2f", score.getAsDouble())
+                : "Jury passed";
     }
 }

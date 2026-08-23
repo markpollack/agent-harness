@@ -20,11 +20,10 @@ import io.github.markpollack.workflow.core.LoopState;
 import io.github.markpollack.workflow.strategy.TerminationStrategy;
 import io.github.markpollack.judge.jury.Jury;
 import io.github.markpollack.judge.jury.Verdict;
-import io.github.markpollack.judge.score.Scores;
 
 import java.nio.file.Path;
-import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalDouble;
 
 /**
  * Termination strategy that uses spring-ai-agents Jury for loop termination decisions.
@@ -94,21 +93,23 @@ public class JuryTerminationStrategy implements TerminationStrategy {
 
         // Check if jury verdict indicates success
         boolean passed = verdict.aggregated().pass();
-        double score = Scores.toNormalized(verdict.aggregated().score(), Map.of());
+        OptionalDouble score = verdict.aggregated().effectiveScore();
 
         if (requirePass && passed) {
             return TerminationResult.terminate(
                     TerminationReason.SCORE_THRESHOLD_MET,
-                    String.format("Jury passed with score %.2f: %s",
-                            score, verdict.aggregated().reasoning())
+                    String.format("Jury passed with score %s: %s",
+                            ScoreText.describe(score), verdict.aggregated().reasoning())
             );
         }
 
-        if (!requirePass && score >= scoreThreshold) {
+        // An aggregate that made no measurement carries no score to compare, so the loop
+        // continues rather than reading "did not evaluate" as a value below the threshold.
+        if (!requirePass && score.isPresent() && score.getAsDouble() >= scoreThreshold) {
             return TerminationResult.terminate(
                     TerminationReason.SCORE_THRESHOLD_MET,
                     String.format("Score %.2f >= threshold %.2f: %s",
-                            score, scoreThreshold, verdict.aggregated().reasoning())
+                            score.getAsDouble(), scoreThreshold, verdict.aggregated().reasoning())
             );
         }
 

@@ -4,20 +4,29 @@ import io.github.markpollack.workflow.core.AgentContext;
 import io.github.markpollack.judge.context.JudgmentContext;
 import io.github.markpollack.judge.jury.Jury;
 import io.github.markpollack.judge.jury.Verdict;
-import io.github.markpollack.judge.score.NumericalScore;
-import io.github.markpollack.judge.score.Score;
+import io.github.markpollack.judge.result.Judgment;
 
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
+import java.util.OptionalDouble;
 import java.util.function.BiFunction;
 
 /**
  * Quality gate backed by an {@code agent-judge} {@link Jury}.
  * <p>
  * PASS if the aggregated score &gt;= threshold, FAIL otherwise.
- * On FAIL, the {@link Verdict} is available via {@link #lastVerdict()} so the
- * executor can write it into {@link AgentContext#JUDGE_VERDICT} for the retry step.
+ * The {@link Verdict} rides out on the returned {@link GateAssessment}, so the executor can write
+ * it into {@link AgentContext#JUDGE_VERDICT} for the retry step.
+ *
+ * <h2>Aggregates that carry no score</h2>
+ * A jury reports an outcome; it does not always report a measurement. A status-only PASS or
+ * FAIL is compared through its derived {@code 1.0}/{@code 0.0} view, so a judge that passed
+ * without measuring anything clears this gate. An abstention or an evaluation error is not a
+ * finding at all — there is nothing to compare against the threshold, and treating it as a
+ * quality score of zero would turn "did not evaluate" into "evaluated badly" — so the evaluation
+ * comes back {@link GateAssessment.Inconclusive} and the engine terminates the attempt through its
+ * error path once it has recorded the verdict.
  *
  * <h2>Building the {@link JudgmentContext}</h2>
  * The jury votes on a {@link JudgmentContext} produced by a <em>context mapper</em> —
@@ -36,7 +45,6 @@ public class JudgeGate<O> implements Gate<O> {
     private final Jury jury;
     private final double threshold;
     private final BiFunction<AgentContext, O, JudgmentContext> contextMapper;
-    private volatile Verdict lastVerdict;
 
     /**
      * @param jury          the jury that votes on the mapped context
@@ -52,16 +60,38 @@ public class JudgeGate<O> implements Gate<O> {
     }
 
     @Override
-    public GateDecision evaluate(AgentContext ctx, O output) {
+    public GateAssessment evaluate(AgentContext ctx, O output) {
         JudgmentContext judgmentCtx = this.contextMapper.apply(ctx, output);
-        lastVerdict = jury.vote(judgmentCtx);
-        double score = extractScore(lastVerdict);
-        return score >= threshold ? GateDecision.PASS : GateDecision.FAIL;
+        Verdict verdict = jury.vote(judgmentCtx);
+        Judgment aggregate = verdict.aggregated();
+        return switch (aggregate.status()) {
+            // The jury reached a finding. A measured score is compared directly; a status-only
+            // finding is compared through its derived 1.0/0.0 view.
+            case PASS, FAIL -> new GateAssessment.Decided(
+                    comparableScore(aggregate) >= threshold ? GateDecision.PASS : GateDecision.FAIL,
+                    verdict);
+            // No finding exists to compare, and zero is a real assessment rather than the absence
+            // of one. The evaluation is returned as inconclusive so the engine records it and then
+            // terminates the attempt through its error path.
+            case ABSTAIN, ERROR -> new GateAssessment.Inconclusive(verdict,
+                    "jury returned " + aggregate.status() + ", so no pass/fail finding exists to compare "
+                            + "against threshold " + threshold + ": " + aggregate.reasoning());
+        };
     }
 
-    /** Returns the verdict from the most recent evaluation, or null if not yet evaluated. */
-    public Verdict lastVerdict() {
-        return lastVerdict;
+    /**
+     * The numeric contribution of a judgment that reached a finding.
+     * <p>
+     * Reading {@code status} first is what makes this total: {@code effectiveScore()} is empty
+     * exactly for the statuses this method is never called with.
+     */
+    static double comparableScore(Judgment aggregate) {
+        OptionalDouble effective = aggregate.effectiveScore();
+        if (effective.isEmpty()) {
+            throw new IllegalStateException(
+                    "Judgment with status " + aggregate.status() + " carries no comparable score");
+        }
+        return effective.getAsDouble();
     }
 
     /**
@@ -80,17 +110,5 @@ public class JudgeGate<O> implements Gate<O> {
                 .executionTime(Duration.ZERO)
                 .startedAt(Instant.now())
                 .build();
-    }
-
-    private double extractScore(Verdict verdict) {
-        if (verdict.aggregated() == null || verdict.aggregated().score() == null) {
-            return 0.0;
-        }
-        Score score = verdict.aggregated().score();
-        if (score instanceof NumericalScore ns) {
-            return ns.value();
-        }
-        // BooleanScore: treat pass as 1.0, fail as 0.0
-        return verdict.aggregated().pass() ? 1.0 : 0.0;
     }
 }

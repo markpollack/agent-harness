@@ -20,11 +20,10 @@ import io.github.markpollack.workflow.core.LoopState;
 import io.github.markpollack.workflow.core.LoopStatus;
 import io.github.markpollack.workflow.core.TerminationReason;
 import io.github.markpollack.judge.jury.Verdict;
-import io.github.markpollack.judge.score.Scores;
 import org.springframework.lang.Nullable;
 
 import java.time.Duration;
-import java.util.Map;
+import java.util.OptionalDouble;
 
 /**
  * Result of executing a TurnLimitedLoop.
@@ -49,11 +48,15 @@ public record TurnLimitedResult(
 ) implements LoopResult {
 
     /**
-     * Returns the final score from the last jury evaluation, or 0.0 if no verdict.
+     * Returns the final score from the last jury evaluation.
+     * <p>
+     * Empty when no jury ran, and equally empty when the jury ran but reached no finding to
+     * measure. Both are the absence of a score rather than a score of zero, and a caller that
+     * needs to tell them apart reads {@link #lastVerdict()}.
      */
-    public double finalScore() {
-        if (lastVerdict == null) return 0.0;
-        return Scores.toNormalized(lastVerdict.aggregated().score(), Map.of());
+    public OptionalDouble finalScore() {
+        if (lastVerdict == null) return OptionalDouble.empty();
+        return lastVerdict.aggregated().effectiveScore();
     }
 
     /**

@@ -19,6 +19,7 @@ import io.github.markpollack.workflow.core.LoopPattern;
 import io.github.markpollack.workflow.core.LoopState;
 import io.github.markpollack.workflow.core.LoopStatus;
 import io.github.markpollack.workflow.core.TerminationReason;
+import io.github.markpollack.workflow.patterns.judge.ScoreText;
 import io.github.markpollack.workflow.patterns.judge.SpringAiJuryAdapter;
 import io.github.markpollack.workflow.patterns.statemachine.StateMachineConfig.StateHandler;
 import io.github.markpollack.workflow.patterns.statemachine.StateMachineConfig.StateContext;
@@ -27,7 +28,6 @@ import io.github.markpollack.workflow.strategy.TerminationStrategy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import io.github.markpollack.judge.jury.Verdict;
-import io.github.markpollack.judge.score.Scores;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.tool.ToolCallback;
@@ -38,6 +38,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.OptionalDouble;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -258,13 +259,16 @@ public class StateMachineLoop implements LoopPattern<StateMachineResult> {
 
                 if (verdict != null) {
                     boolean passed = verdict.aggregated().pass();
-                    double score = Scores.toNormalized(verdict.aggregated().score(), Map.of());
+                    OptionalDouble score = verdict.aggregated().effectiveScore();
 
-                    log.debug("Iteration {} jury evaluation completed: passed={}, score={}",
-                            iteration, passed, score);
+                    log.debug("Iteration {} jury evaluation completed: status={}, score={}",
+                            iteration, verdict.aggregated().status(), ScoreText.describe(score));
 
                     if (passed) {
-                        transitionResult = TransitionResult.complete(lastOutput, "Jury passed with score " + score);
+                        // A passing jury that measured nothing still passes; the reported score
+                        // is its derived view, and the reason names it as such rather than as 0.0.
+                        transitionResult = TransitionResult.complete(lastOutput,
+                                "Jury passed with score " + ScoreText.describe(score));
                     }
                 }
             }

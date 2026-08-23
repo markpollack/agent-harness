@@ -3,8 +3,7 @@ package io.github.markpollack.workflow.flows.workflow;
 import io.github.markpollack.workflow.core.AgentContext;
 import io.github.markpollack.judge.jury.Jury;
 import io.github.markpollack.judge.jury.Verdict;
-import io.github.markpollack.judge.score.NumericalScore;
-import io.github.markpollack.judge.score.Score;
+import io.github.markpollack.judge.result.Judgment;
 
 import java.util.Objects;
 import java.util.function.BiFunction;
@@ -18,6 +17,15 @@ import io.github.markpollack.judge.context.JudgmentContext;
  * {@link JudgmentContext} the jury votes on is produced by a required <em>context mapper</em> — see
  * {@link JudgeGate} for why. The ESCALATE path is for borderline results that need human review.
  *
+ * <h2>Aggregates that carry no score</h2>
+ * A status-only PASS or FAIL is tiered through its derived {@code 1.0}/{@code 0.0} view. The two
+ * scoreless outcomes part company here, because this gate has a human tier that {@link JudgeGate}
+ * does not: an <em>abstention</em> is a subject this jury cannot speak to, which is precisely what
+ * the escalation path is for, so it escalates rather than terminating. An <em>evaluation error</em>
+ * means the jury never ran to completion; escalating it would present a non-result to a reviewer as
+ * a borderline result, so the evaluation comes back {@link GateAssessment.Inconclusive} and the
+ * engine terminates the attempt through its error path once it has recorded the verdict.
+ *
  * @param <O> the type of output being evaluated
  */
 public class TieredGate<O> implements Gate<O> {
@@ -26,7 +34,6 @@ public class TieredGate<O> implements Gate<O> {
     private final double highThreshold;
     private final double lowThreshold;
     private final BiFunction<AgentContext, O, JudgmentContext> contextMapper;
-    private volatile Verdict lastVerdict;
 
     /**
      * @param jury          the jury that votes on the mapped context
@@ -48,29 +55,25 @@ public class TieredGate<O> implements Gate<O> {
     }
 
     @Override
-    public GateDecision evaluate(AgentContext ctx, O output) {
+    public GateAssessment evaluate(AgentContext ctx, O output) {
         JudgmentContext judgmentCtx = this.contextMapper.apply(ctx, output);
 
-        lastVerdict = jury.vote(judgmentCtx);
-        double score = extractScore(lastVerdict);
+        Verdict verdict = jury.vote(judgmentCtx);
+        Judgment aggregate = verdict.aggregated();
 
+        return switch (aggregate.status()) {
+            case PASS, FAIL -> new GateAssessment.Decided(tier(JudgeGate.comparableScore(aggregate)), verdict);
+            // A subject this jury cannot speak to is what the human tier exists for.
+            case ABSTAIN -> new GateAssessment.Decided(GateDecision.ESCALATE, verdict);
+            case ERROR -> new GateAssessment.Inconclusive(verdict,
+                    "jury returned " + aggregate.status() + ", so no finding exists to tier against thresholds "
+                            + lowThreshold + "/" + highThreshold + ": " + aggregate.reasoning());
+        };
+    }
+
+    private GateDecision tier(double score) {
         if (score >= highThreshold) return GateDecision.PASS;
         if (score >= lowThreshold) return GateDecision.ESCALATE;
         return GateDecision.FAIL;
-    }
-
-    public Verdict lastVerdict() {
-        return lastVerdict;
-    }
-
-    private double extractScore(Verdict verdict) {
-        if (verdict.aggregated() == null || verdict.aggregated().score() == null) {
-            return 0.0;
-        }
-        Score score = verdict.aggregated().score();
-        if (score instanceof NumericalScore ns) {
-            return ns.value();
-        }
-        return verdict.aggregated().pass() ? 1.0 : 0.0;
     }
 }

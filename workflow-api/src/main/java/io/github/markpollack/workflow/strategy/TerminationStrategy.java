@@ -18,10 +18,9 @@ package io.github.markpollack.workflow.strategy;
 import io.github.markpollack.workflow.core.TerminationReason;
 import io.github.markpollack.workflow.core.LoopState;
 import io.github.markpollack.judge.jury.Verdict;
-import io.github.markpollack.judge.score.Scores;
 
 import java.util.List;
-import java.util.Map;
+import java.util.OptionalDouble;
 
 /**
  * Strategy for determining when an agent loop should terminate.
@@ -142,19 +141,15 @@ public interface TerminationStrategy {
                 return TerminationResult.terminate(TerminationReason.SCORE_THRESHOLD_MET,
                         "Jury passed");
             }
-            // Check score threshold
-            double score = normalizeScore(verdict);
-            if (score >= threshold) {
+            // Check score threshold. A verdict that reached no finding — an abstention or an
+            // evaluation error — carries no score to compare, and the loop continues rather
+            // than reading that absence as a score below the threshold.
+            OptionalDouble score = verdict.aggregated().effectiveScore();
+            if (score.isPresent() && score.getAsDouble() >= threshold) {
                 return TerminationResult.terminate(TerminationReason.SCORE_THRESHOLD_MET,
-                        String.format("Score %.2f >= threshold %.2f", score, threshold));
+                        String.format("Score %.2f >= threshold %.2f", score.getAsDouble(), threshold));
             }
             return TerminationResult.continueLoop();
         };
-    }
-
-    private static double normalizeScore(Verdict verdict) {
-        // Use spring-ai-agents-judge Scores utility for normalization
-        var aggregated = verdict.aggregated();
-        return Scores.toNormalized(aggregated.score(), Map.of());
     }
 }

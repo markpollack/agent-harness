@@ -23,12 +23,18 @@ import org.springframework.lang.Nullable;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalDouble;
 
 /**
  * Result of executing an EvaluatorOptimizerLoop (Reflexion pattern).
  * <p>
  * Provides access to common result data via the LoopResult interface,
  * plus pattern-specific data such as trial records and score progression.
+ * <p>
+ * {@code bestScore} is absent when no trial measured anything — no jury was configured, or every
+ * jury that ran abstained, errored or reported an outcome without a measurement. That is a
+ * different fact from a best score of {@code 0.0}, which means a jury looked and found nothing
+ * good, and the two must stay distinguishable.
  */
 public record EvaluatorOptimizerResult(
         // Common fields (from LoopResult)
@@ -43,7 +49,7 @@ public record EvaluatorOptimizerResult(
 
         // Pattern-specific fields
         List<EvaluatorOptimizerLoop.TrialRecord> trials,
-        double bestScore,
+        OptionalDouble bestScore,
         @Nullable String bestReflection
 ) implements LoopResult {
 
@@ -55,11 +61,15 @@ public record EvaluatorOptimizerResult(
     }
 
     /**
-     * Returns the score improvement from first to best trial.
+     * Returns the score improvement from first to best trial, or empty when the first trial
+     * measured nothing and there is therefore no baseline to improve on.
      */
-    public double scoreImprovement() {
-        if (trials.isEmpty()) return 0.0;
-        return bestScore - trials.get(0).score();
+    public OptionalDouble scoreImprovement() {
+        if (trials.isEmpty()) return OptionalDouble.empty();
+        OptionalDouble first = trials.get(0).score();
+        return first.isPresent() && bestScore.isPresent()
+                ? OptionalDouble.of(bestScore.getAsDouble() - first.getAsDouble())
+                : OptionalDouble.empty();
     }
 
     /**
@@ -77,11 +87,13 @@ public record EvaluatorOptimizerResult(
     }
 
     /**
-     * Returns the best trial by score.
+     * Returns the best trial by score, or empty when no trial measured anything — there is no
+     * best among trials that were never scored.
      */
     public Optional<EvaluatorOptimizerLoop.TrialRecord> bestTrial() {
+        if (bestScore.isEmpty()) return Optional.empty();
         return trials.stream()
-                .filter(t -> t.score() == bestScore)
+                .filter(t -> t.score().isPresent() && t.score().getAsDouble() == bestScore.getAsDouble())
                 .findFirst();
     }
 
@@ -117,7 +129,7 @@ public record EvaluatorOptimizerResult(
             long tokens,
             double cost,
             List<EvaluatorOptimizerLoop.TrialRecord> trials,
-            double bestScore,
+            OptionalDouble bestScore,
             @Nullable String bestReflection
     ) {
         return new EvaluatorOptimizerResult(
@@ -147,7 +159,7 @@ public record EvaluatorOptimizerResult(
             long tokens,
             double cost,
             List<EvaluatorOptimizerLoop.TrialRecord> trials,
-            double bestScore,
+            OptionalDouble bestScore,
             @Nullable String bestReflection
     ) {
         return new EvaluatorOptimizerResult(
@@ -183,7 +195,7 @@ public record EvaluatorOptimizerResult(
                 0,
                 0.0,
                 List.of(),
-                0.0,
+                OptionalDouble.empty(),
                 null
         );
     }

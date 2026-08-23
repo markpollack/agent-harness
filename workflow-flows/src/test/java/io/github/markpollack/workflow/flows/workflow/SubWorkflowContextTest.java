@@ -123,7 +123,7 @@ class SubWorkflowContextTest {
                     .step(passingStep)
                     .build();
 
-            Gate<Object> alwaysPass = (ctx, in) -> GateDecision.PASS;
+            Gate<Object> alwaysPass = (ctx, in) -> GateAssessment.decided(GateDecision.PASS);
 
             AtomicReference<String> captured = new AtomicReference<>();
             Workflow.<String, String>define("gated")

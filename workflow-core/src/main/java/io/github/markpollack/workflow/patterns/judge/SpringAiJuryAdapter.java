@@ -22,28 +22,27 @@ import io.github.markpollack.judge.context.ExecutionStatus;
 import io.github.markpollack.judge.context.JudgmentContext;
 import io.github.markpollack.judge.jury.Jury;
 import io.github.markpollack.judge.jury.Verdict;
-import io.github.markpollack.judge.score.Scores;
 import org.springframework.ai.chat.model.ChatResponse;
 
 import java.nio.file.Path;
-import java.util.Map;
 import java.util.Optional;
 
 /**
- * Adapter that bridges spring-ai-agents Judge/Jury framework with agent-workflow.
+ * Adapter that bridges the agent-judge Judge/Jury framework with agent-workflow.
  * <p>
- * This adapter enables using the rich spring-ai-agents judge ecosystem
- * (BuildSuccessJudge, FileExistsJudge, LLMJudge, etc.) within our agent loop patterns.
+ * This adapter enables using the rich judge ecosystem (BuildSuccessJudge, FileExistsJudge,
+ * LLMJudge, etc.) within our agent loop patterns.
  * <p>
- * Key integration points:
- * <ul>
- *   <li>Converts LoopState to spring-ai-agents JudgmentContext</li>
- *   <li>Wraps synchronous Jury.vote() in reactive Mono</li>
- *   <li>Records observability metrics for judge execution</li>
- *   <li>Maps Verdict to termination decisions</li>
- * </ul>
+ * It does exactly two things: it builds a {@link JudgmentContext} out of a {@link LoopState}, and
+ * it runs the jury's vote synchronously, logging the outcome. There is no reactive wrapper — the
+ * call blocks and returns a {@link Verdict} — and no metrics are recorded here; a caller that
+ * wants observability instruments its own loop.
  *
- * <p>Example usage with W&B-lite observability:
+ * <p>Reading the outcome is the caller's job and belongs at the caller, where the policy is:
+ * {@code verdict.aggregated()} carries the status, and its {@code effectiveScore()} is present
+ * only when the jury reached a finding.
+ *
+ * <p>Example usage:
  * <pre>{@code
  * Jury jury = SimpleJury.builder()
  *     .judge(BuildSuccessJudge.compile(), 0.5)
@@ -51,10 +50,10 @@ import java.util.Optional;
  *     .votingStrategy(new WeightedAverageStrategy())
  *     .build();
  *
- * SpringAiJuryAdapter adapter = new SpringAiJuryAdapter(jury, observability);
+ * SpringAiJuryAdapter adapter = new SpringAiJuryAdapter(jury, "build-health-jury");
  *
  * // In loop pattern:
- * Verdict verdict = adapter.evaluate(loopState, response, workingDir).block();
+ * Verdict verdict = adapter.evaluate(loopState, response, workingDir);
  * if (verdict.aggregated().pass()) {
  *     // Terminate loop
  * }
@@ -77,7 +76,7 @@ public class SpringAiJuryAdapter {
     }
 
     /**
-     * Evaluates the current loop state using the spring-ai-agents jury.
+     * Evaluates the current loop state using the agent-judge jury.
      * <p>
      * This is a synchronous call that executes all judges and aggregates their verdicts.
      *
@@ -99,7 +98,7 @@ public class SpringAiJuryAdapter {
                 }
             }
 
-            // Build spring-ai-agents JudgmentContext from LoopState
+            // Build the agent-judge JudgmentContext from LoopState
             JudgmentContext context = buildContext(state, workingDirectory, agentOutput);
 
             // Execute jury vote
@@ -110,11 +109,10 @@ public class SpringAiJuryAdapter {
 
             // Log results
             long durationMs = System.currentTimeMillis() - startTime;
-            double score = Scores.toNormalized(verdict.aggregated().score(), Map.of());
 
-            log.debug("{} evaluation completed: runId={}, turn={}, passed={}, score={}, duration={}ms",
-                    juryName, state.runId(), state.currentTurn(),
-                    verdict.aggregated().pass(), score, durationMs);
+            log.debug("{} evaluation completed: runId={}, turn={}, status={}, score={}, duration={}ms",
+                    juryName, state.runId(), state.currentTurn(), verdict.aggregated().status(),
+                    ScoreText.describe(verdict.aggregated().effectiveScore()), durationMs);
 
             return verdict;
 
@@ -130,7 +128,7 @@ public class SpringAiJuryAdapter {
     }
 
     /**
-     * Builds a spring-ai-agents JudgmentContext from our LoopState.
+     * Builds an agent-judge JudgmentContext from our LoopState.
      */
     private JudgmentContext buildContext(LoopState state, Path workingDirectory, Optional<String> agentOutput) {
         JudgmentContext.Builder builder = JudgmentContext.builder()
@@ -149,20 +147,6 @@ public class SpringAiJuryAdapter {
         builder.metadata("estimatedCost", state.estimatedCost());
 
         return builder.build();
-    }
-
-    /**
-     * Returns true if the verdict indicates the loop should terminate successfully.
-     */
-    public boolean shouldTerminate(Verdict verdict) {
-        return verdict.aggregated().pass();
-    }
-
-    /**
-     * Returns the aggregated score from the verdict (0.0 - 1.0).
-     */
-    public double getScore(Verdict verdict) {
-        return Scores.toNormalized(verdict.aggregated().score(), Map.of());
     }
 
     /**

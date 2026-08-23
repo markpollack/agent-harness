@@ -135,6 +135,9 @@ public class WorkflowExecutor {
                         // Check for error edges
                         WorkflowEdge errorEdge = graph.errorEdge(currentNodeName, e);
                         if (errorEdge != null) {
+                            if (subCtxCapture != null) {
+                                ctx = propagateJudgeEvidence(ctx, subCtxCapture.get());
+                            }
                             logger.debug("Error in '{}', routing to '{}'", currentNodeName, errorEdge.to());
                             previousNodeName = currentNodeName;
                             currentNodeName = errorEdge.to();
@@ -227,44 +230,70 @@ public class WorkflowExecutor {
                     Instant start = Instant.now();
                     @SuppressWarnings("unchecked")
                     Gate<Object> gate = (Gate<Object>) gateNode.gate();
-                    GateDecision decision = gate.evaluate(ctx, currentValue);
-                    ctx = gate.updateContext(ctx, currentValue, decision);
+                    GateAssessment evaluation = gate.evaluate(ctx, currentValue);
+                    Object verdict = evaluation.verdict();
 
-                    // Verdict trail: record every judged gate's verdict (PASS and FAIL) to a standard
-                    // accumulating key, so downstream steps (reports, audits) read the full cascade
-                    // without a bespoke per-consumer gate wrapper.
-                    Object verdict = null;
-                    if (gate instanceof JudgeGate<?> jg) verdict = jg.lastVerdict();
-                    else if (gate instanceof TieredGate<?> tg) verdict = tg.lastVerdict();
+                    // Verdict trail: record every judged gate's verdict — decided or not — to a
+                    // standard accumulating key, so downstream steps (reports, audits) read the full
+                    // cascade without a bespoke per-consumer gate wrapper. This happens before the
+                    // gate's own context hook and before any routing, so that a run which ends here
+                    // ends with its evidence written rather than carried off by an exception.
                     if (verdict != null) {
                         List<Object> verdicts = new ArrayList<>(ctx.get(AgentContext.JUDGE_VERDICTS).orElse(List.of()));
                         verdicts.add(verdict);
                         ctx = ctx.mutate().with(AgentContext.JUDGE_VERDICTS, List.copyOf(verdicts)).build();
                     }
 
-                    // Verdict feedback: write the singular Verdict + run the reflector on FAIL/ESCALATE
-                    if ((decision == GateDecision.FAIL || decision == GateDecision.ESCALATE) && verdict != null) {
-                        ctx = ctx.mutate()
-                                .with(AgentContext.JUDGE_VERDICT, verdict)
-                                .build();
-                        // Run reflector if configured
-                        if (gateNode.reflector() != null) {
-                            @SuppressWarnings("unchecked")
-                            Step<Object, Object> reflector = (Step<Object, Object>) gateNode.reflector();
-                            Object reflection = stepRunner.execute(reflector, ctx, verdict);
-                            ctx = ctx.mutate()
-                                    .with(AgentContext.JUDGE_REFLECTION, reflection.toString())
-                                    .build();
+                    // Exhaustive over the evaluation, so a third kind of outcome fails compilation
+                    // here rather than falling through to a route that does not exist.
+                    switch (evaluation) {
+
+                        case GateAssessment.Inconclusive inconclusive -> {
+                            // No decision exists, so there is nothing to hand the gate's context hook
+                            // and no edge to take. Write the singular verdict, record the transition
+                            // and publish the context; only then signal the engine's error path.
+                            ctx = ctx.mutate().with(AgentContext.JUDGE_VERDICT, inconclusive.verdict()).build();
+                            recordTransition(runId, graph.name(), previousNodeName, gateNode.name(),
+                                    Duration.between(start, Instant.now()), 0L, 0.0, gateNode.type(),
+                                    "inconclusive");
+                            logger.info("Gate '{}' in workflow '{}' reached no decision: {}",
+                                    gateNode.name(), graph.name(), inconclusive.reason());
+                            if (contextOut != null) contextOut.set(ctx);
+                            throw new GateAssessmentException(gateNode.name(), inconclusive.verdict(),
+                                    inconclusive.reason());
+                        }
+
+                        case GateAssessment.Decided decided -> {
+                            GateDecision decision = decided.decision();
+                            ctx = gate.updateContext(ctx, currentValue, decision);
+
+                            // Verdict feedback: write the singular Verdict + run the reflector on
+                            // FAIL/ESCALATE
+                            if ((decision == GateDecision.FAIL || decision == GateDecision.ESCALATE)
+                                    && verdict != null) {
+                                ctx = ctx.mutate()
+                                        .with(AgentContext.JUDGE_VERDICT, verdict)
+                                        .build();
+                                // Run reflector if configured
+                                if (gateNode.reflector() != null) {
+                                    @SuppressWarnings("unchecked")
+                                    Step<Object, Object> reflector = (Step<Object, Object>) gateNode.reflector();
+                                    Object reflection = stepRunner.execute(reflector, ctx, verdict);
+                                    ctx = ctx.mutate()
+                                            .with(AgentContext.JUDGE_REFLECTION, reflection.toString())
+                                            .build();
+                                }
+                            }
+
+                            String label = decision.name().toLowerCase();
+                            recordTransition(runId, graph.name(), previousNodeName, gateNode.name(),
+                                    Duration.between(start, Instant.now()), 0L, 0.0, gateNode.type(), label);
+                            // currentValue passes through unchanged
+                            previousNodeName = currentNodeName;
+                            EdgeCondition gateTarget = new EdgeCondition.GateMatch(decision);
+                            currentNodeName = findEdgeByCondition(graph, gateNode.name(), gateTarget);
                         }
                     }
-
-                    String label = decision.name().toLowerCase();
-                    recordTransition(runId, graph.name(), previousNodeName, gateNode.name(),
-                            Duration.between(start, Instant.now()), 0L, 0.0, gateNode.type(), label);
-                    // currentValue passes through unchanged
-                    previousNodeName = currentNodeName;
-                    EdgeCondition gateTarget = new EdgeCondition.GateMatch(decision);
-                    currentNodeName = findEdgeByCondition(graph, gateNode.name(), gateTarget);
                 }
 
                 case WorkflowNode.LoopEntryNode le -> {
@@ -436,6 +465,19 @@ public class WorkflowExecutor {
     }
 
     // -- Helpers --
+
+    /**
+     * Propagates the judge evidence a parent recovery step needs from a failed sub-workflow without
+     * merging the failed child's application context.
+     */
+    private AgentContext propagateJudgeEvidence(AgentContext parent, AgentContext child) {
+        AgentContext.Builder evidence = parent.mutate();
+        child.get(AgentContext.JUDGE_VERDICT)
+                .ifPresent(verdict -> evidence.with(AgentContext.JUDGE_VERDICT, verdict));
+        child.get(AgentContext.JUDGE_VERDICTS)
+                .ifPresent(verdicts -> evidence.with(AgentContext.JUDGE_VERDICTS, verdicts));
+        return evidence.build();
+    }
 
     private String findNonErrorSuccessor(WorkflowGraph<?, ?> graph, String nodeName) {
         List<WorkflowEdge> edges = graph.edgesFrom(nodeName);
