@@ -76,6 +76,7 @@
         <maven-gpg-plugin.version>3.2.8</maven-gpg-plugin.version>
         <central-publishing-maven-plugin.version>0.11.0</central-publishing-maven-plugin.version>
         <exec-maven-plugin.version>3.6.3</exec-maven-plugin.version>
+        <cyclonedx-maven-plugin.version>2.9.3</cyclonedx-maven-plugin.version>
     </properties>
 
     <dependencyManagement>
@@ -417,6 +418,36 @@
             </plugins>
         </pluginManagement>
         <plugins>
+            <!-- Attach one module-rooted SBOM to every artifact. The release-manager
+                 independently checks it against a clean external consumer. -->
+            <plugin>
+                <groupId>org.cyclonedx</groupId>
+                <artifactId>cyclonedx-maven-plugin</artifactId>
+                <version>${cyclonedx-maven-plugin.version}</version>
+                <executions>
+                    <execution>
+                        <id>consumer-cyclonedx-sbom</id>
+                        <phase>verify</phase>
+                        <goals><goal>makeBom</goal></goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <skipNotDeployed>false</skipNotDeployed>
+                    <projectType>library</projectType>
+                    <schemaVersion>1.6</schemaVersion>
+                    <includeBomSerialNumber>true</includeBomSerialNumber>
+                    <includeCompileScope>true</includeCompileScope>
+                    <includeRuntimeScope>true</includeRuntimeScope>
+                    <includeProvidedScope>false</includeProvidedScope>
+                    <includeSystemScope>false</includeSystemScope>
+                    <includeTestScope>false</includeTestScope>
+                    <includeLicenseText>false</includeLicenseText>
+                    <outputFormat>json</outputFormat>
+                    <outputName>${project.artifactId}-${project.version}-cyclonedx</outputName>
+                    <classifier>cyclonedx</classifier>
+                </configuration>
+            </plugin>
+
             <!-- Generate the consumer POM on every build, then assert its exported floors. -->
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
