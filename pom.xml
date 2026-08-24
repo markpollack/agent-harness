@@ -55,27 +55,27 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
         <!-- Versions -->
-        <reactor.version>3.7.2</reactor.version>
-        <jackson.version>2.21.6</jackson.version>
-        <jackson3.version>3.1.6</jackson3.version>
+        <reactor.version>3.8.7</reactor.version>
+        <jackson.version>2.22.2</jackson.version>
+        <jackson3.version>3.2.2</jackson3.version>
         <json-schema-validator.version>3.0.7</json-schema-validator.version>
-        <junit.version>5.11.4</junit.version>
-        <assertj.version>3.27.3</assertj.version>
-        <slf4j.version>2.0.16</slf4j.version>
-        <logback.version>1.5.15</logback.version>
-        <micrometer.version>1.14.2</micrometer.version>
-        <spring-ai.version>2.0.0</spring-ai.version>
+        <junit.version>5.14.4</junit.version>
+        <assertj.version>3.27.7</assertj.version>
+        <slf4j.version>2.0.18</slf4j.version>
+        <logback.version>1.6.3</logback.version>
+        <micrometer.version>1.17.1</micrometer.version>
+        <spring-ai.version>2.0.1</spring-ai.version>
         <agent-judge.version>0.15.0</agent-judge.version>
-        <spring-ai-agent-utils.version>0.5.0</spring-ai-agent-utils.version>
+        <spring-ai-agent-utils.version>0.10.0</spring-ai-agent-utils.version>
         <journal-core.version>1.8.0</journal-core.version>
-        <jacoco.version>0.8.12</jacoco.version>
+        <jacoco.version>0.8.15</jacoco.version>
 
         <!-- Release plugin versions -->
-        <maven-source-plugin.version>3.3.0</maven-source-plugin.version>
-        <maven-javadoc-plugin.version>3.6.0</maven-javadoc-plugin.version>
-        <maven-gpg-plugin.version>3.2.7</maven-gpg-plugin.version>
-        <central-publishing-maven-plugin.version>0.10.0</central-publishing-maven-plugin.version>
-        <exec-maven-plugin.version>3.5.0</exec-maven-plugin.version>
+        <maven-source-plugin.version>3.4.0</maven-source-plugin.version>
+        <maven-javadoc-plugin.version>3.12.0</maven-javadoc-plugin.version>
+        <maven-gpg-plugin.version>3.2.8</maven-gpg-plugin.version>
+        <central-publishing-maven-plugin.version>0.11.0</central-publishing-maven-plugin.version>
+        <exec-maven-plugin.version>3.6.3</exec-maven-plugin.version>
     </properties>
 
     <dependencyManagement>
@@ -233,7 +233,7 @@
             <dependency>
                 <groupId>org.zeroturnaround</groupId>
                 <artifactId>zt-exec</artifactId>
-                <version>1.12</version>
+                <version>1.13.0</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
@@ -273,7 +273,7 @@
                     <plugin>
                         <groupId>org.owasp</groupId>
                         <artifactId>dependency-check-maven</artifactId>
-                        <version>12.1.0</version>
+                        <version>12.2.2</version>
                         <configuration>
                             <failBuildOnCVSS>7.0</failBuildOnCVSS>
                             <ossindexAnalyzerEnabled>false</ossindexAnalyzerEnabled>
@@ -370,7 +370,7 @@
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-compiler-plugin</artifactId>
-                    <version>3.14.0</version>
+                    <version>3.15.0</version>
                     <configuration>
                         <release>${java.version}</release>
                     </configuration>
@@ -378,7 +378,7 @@
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-surefire-plugin</artifactId>
-                    <version>3.5.2</version>
+                    <version>3.5.6</version>
                     <configuration>
                         <argLine>@{argLine}</argLine>
                     </configuration>
@@ -386,7 +386,7 @@
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-failsafe-plugin</artifactId>
-                    <version>3.5.2</version>
+                    <version>3.5.6</version>
                     <configuration>
                         <argLine></argLine>
                         <includes>
@@ -421,7 +421,7 @@
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>flatten-maven-plugin</artifactId>
-                <version>1.6.0</version>
+                <version>1.8.0</version>
                 <configuration>
                     <flattenMode>ossrh</flattenMode>
                     <outputDirectory>${project.build.directory}</outputDirectory>

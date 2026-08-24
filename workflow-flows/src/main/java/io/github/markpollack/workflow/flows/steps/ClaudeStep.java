@@ -178,6 +178,7 @@ public class ClaudeStep implements Step<String, String>, AgentStep {
             pb.redirectErrorStream(true);
 
             Process process = pb.start();
+            process.getOutputStream().close();
             String output = new String(process.getInputStream().readAllBytes());
             int exitCode = process.waitFor();
 
