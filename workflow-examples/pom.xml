@@ -14,6 +14,10 @@
     <name>Workflow Examples</name>
     <description>Example implementations of all patterns</description>
 
+    <properties>
+        <maven.deploy.skip>true</maven.deploy.skip>
+    </properties>
+
     <dependencies>
         <dependency>
             <groupId>io.github.markpollack</groupId>
